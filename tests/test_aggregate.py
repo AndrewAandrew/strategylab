@@ -1,8 +1,10 @@
-import socket
-from collections.abc import Sequence
+import os
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import pytest
 
 from strategylab.core.bars import Bar, Interval
@@ -17,18 +19,27 @@ SYMBOL = "BTCUSDT"
 
 FIELDS = ("open", "high", "low", "close", "volume")
 
-
-def _network_available() -> bool:
-    try:
-        with socket.create_connection(("api.bybit.com", 443), timeout=5):
-            return True
-    except OSError:
-        return False
-
-
+# Сетевые тесты включаются переменной окружения, а не проверкой достижимости:
+# сама проверка — сетевой вызов, и из-за неё обычный прогон зависел от сети.
 requires_network = pytest.mark.skipif(
-    not _network_available(), reason="нет доступа к api.bybit.com"
+    not os.environ.get("STRATEGYLAB_NETWORK_TESTS"),
+    reason="нужна STRATEGYLAB_NETWORK_TESTS=1: тест ходит на api.bybit.com",
 )
+
+
+@contextmanager
+def live_exchange() -> Iterator[None]:
+    """Сбой обмена не должен читаться как расхождение баров.
+
+    Таймаут или обрыв соединения говорят об окружении, а не о данных, поэтому
+    такой сбой падает с именем transport-ошибки. Повторов нет намеренно:
+    молчаливый ретрай способен скрыть настоящее расхождение, и пропуском такой
+    сбой тоже не становится — он остаётся падением.
+    """
+    try:
+        yield
+    except httpx.HTTPError as exc:
+        pytest.fail(f"запрос к api.bybit.com не удался, это не расхождение баров: {exc!r}")
 
 
 def _bar(
@@ -197,10 +208,11 @@ def _exchange_bars(interval: Interval, start: int, end: int) -> dict[int, Bar]:
 @pytest.mark.parametrize("interval", [Interval.FIVE_MIN, Interval.FIFTEEN_MIN, Interval.HOUR])
 def test_aggregation_reproduces_the_exchange_bars(interval: Interval, tmp_path: Path) -> None:
     start, end = DAY_2024_06_01, DAY_2024_06_01 + DAY_SECONDS
-    store = _day_store(tmp_path)
 
-    ours = aggregate(list(store.read_1m(SYMBOL, start, end)), interval)
-    theirs = _exchange_bars(interval, start, end)
+    with live_exchange():
+        store = _day_store(tmp_path)
+        ours = aggregate(list(store.read_1m(SYMBOL, start, end)), interval)
+        theirs = _exchange_bars(interval, start, end)
 
     assert [bar.ts for bar in ours] == sorted(theirs)
     differences = [

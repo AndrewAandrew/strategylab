@@ -1,5 +1,7 @@
-import socket
+import os
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
 
@@ -14,18 +16,27 @@ from strategylab.data.sync import BybitError, MalformedRow, fetch_page, rows_to_
 
 CURSOR_2020_04_01 = 1585699200  # 2020-04-01T00:00:00Z, курсор включительно
 
-
-def _network_available() -> bool:
-    try:
-        with socket.create_connection(("api.bybit.com", 443), timeout=5):
-            return True
-    except OSError:
-        return False
-
-
+# Сетевые тесты включаются переменной окружения, а не проверкой достижимости:
+# сама проверка — сетевой вызов, и из-за неё обычный прогон зависел от сети.
 requires_network = pytest.mark.skipif(
-    not _network_available(), reason="нет доступа к api.bybit.com"
+    not os.environ.get("STRATEGYLAB_NETWORK_TESTS"),
+    reason="нужна STRATEGYLAB_NETWORK_TESTS=1: тест ходит на api.bybit.com",
 )
+
+
+@contextmanager
+def live_exchange() -> Iterator[None]:
+    """Сбой обмена не должен читаться как расхождение баров.
+
+    Таймаут или обрыв соединения говорят об окружении, а не о данных, поэтому
+    такой сбой падает с именем transport-ошибки. Повторов нет намеренно:
+    молчаливый ретрай способен скрыть настоящее расхождение, и пропуском такой
+    сбой тоже не становится — он остаётся падением.
+    """
+    try:
+        yield
+    except httpx.HTTPError as exc:
+        pytest.fail(f"запрос к api.bybit.com не удался, это не расхождение баров: {exc!r}")
 
 
 def _row(ts: int) -> list[str]:
@@ -191,7 +202,8 @@ def test_fetch_page_asks_the_exchange_for_the_interval_mapped_from_ours(
 @pytest.mark.network
 @requires_network
 def test_fetch_page_returns_a_full_page_ending_at_the_cursor() -> None:
-    bars = rows_to_bars(fetch_page(CURSOR_2020_04_01, "BTCUSDT"))
+    with live_exchange():
+        bars = rows_to_bars(fetch_page(CURSOR_2020_04_01, "BTCUSDT"))
 
     assert len(bars) == 1000
     assert bars[-1].ts == CURSOR_2020_04_01
@@ -202,5 +214,6 @@ def test_fetch_page_returns_a_full_page_ending_at_the_cursor() -> None:
 @pytest.mark.network
 @requires_network
 def test_fetch_page_raises_bybit_error_on_an_unknown_symbol() -> None:
-    with pytest.raises(BybitError):
-        fetch_page(CURSOR_2020_04_01, "NOSUCHUSDT")
+    with live_exchange():
+        with pytest.raises(BybitError):
+            fetch_page(CURSOR_2020_04_01, "NOSUCHUSDT")
