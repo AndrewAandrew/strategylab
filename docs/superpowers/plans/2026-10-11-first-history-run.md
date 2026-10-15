@@ -97,7 +97,7 @@ StrategyLab/
 - Consumes: ничего
 - Produces: `SCHEMA: str`, `connect(path: Path) -> sqlite3.Connection` — таблицы `bars_1m` и `zones`, обе с текстовым хранением `Decimal`
 
-- [ ] **Step 1: Создать репозиторий и каркас**
+- [x] **Step 1: Создать репозиторий и каркас**
 
 ```bash
 cd /f/mymood/Реальность/Программинг/StrategyLab
@@ -106,7 +106,7 @@ git init
 
 Создать `pyproject.toml` с `[project] requires-python = ">=3.12"`, зависимостями `pytest`, `ruff`, `mypy` в dev-группе; секцией `[tool.pytest.ini_options]`, `[tool.ruff] line-length = 100`, `[tool.mypy] strict = true`. Создать пустые `__init__.py` в `strategylab/`, `strategylab/core/`, `strategylab/data/`.
 
-- [ ] **Step 2: Написать падающий тест на `Decimal` в базе**
+- [x] **Step 2: Написать падающий тест на `Decimal` в базе**
 
 `tests/test_schema.py`:
 
@@ -132,30 +132,30 @@ def test_decimal_survives_round_trip(tmp_path: Path) -> None:
     assert row[4] == Decimal("12.3456789012345")
 ```
 
-- [ ] **Step 3: Убедиться, что тест падает**
+- [x] **Step 3: Убедиться, что тест падает**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_schema.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.data.schema'`
 
-- [ ] **Step 4: Реализовать `schema.py`**
+- [x] **Step 4: Реализовать `schema.py`**
 
 `connect(path: Path) -> sqlite3.Connection` открывает базу, включает `PRAGMA foreign_keys = ON` и `PRAGMA journal_mode = WAL`. `SCHEMA` — строка с `bars_1m` (колонки `symbol TEXT, ts INTEGER, open TEXT, high TEXT, low TEXT, close TEXT, volume TEXT, zone TEXT`, `PRIMARY KEY (symbol, ts)`, `WITHOUT ROWID`) и индексом `idx_bars_1m_zone ON bars_1m(symbol, zone, ts)`, плюс таблица `zones` (колонки `symbol TEXT, start_ts INTEGER, end_ts INTEGER, zone TEXT`, `PRIMARY KEY (symbol, start_ts)`).
 
-- [ ] **Step 5: Запустить тест — должен пройти**
+- [x] **Step 5: Запустить тест — должен пройти**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_schema.py -v`
 Expected: PASS
 
-- [ ] **Step 6: Написать падающий тест на запрет слоёв**
+- [x] **Step 6: Написать падающий тест на запрет слоёв**
 
 `tests/test_layering.py` — обойти все `.py` в `strategylab/core/` и для каждого проверить, что в исходнике нет `from strategylab.drivers` и `import strategylab.drivers`. Ожидание — пустой список нарушителей.
 
-- [ ] **Step 7: Убедиться, что тест проходит тривиально**
+- [x] **Step 7: Убедиться, что тест проходит тривиально**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_layering.py -v`
 Expected: PASS (в `core/` пока нет файлов — тест честно ничего не ловит, но станет рабочим с задачи 10)
 
-- [ ] **Step 8: Коммит**
+- [x] **Step 8: Коммит**
 
 ```bash
 git add pyproject.toml strategylab tests
@@ -174,7 +174,7 @@ git commit -m "feat: project scaffold and candle storage schema"
 - Consumes: ничего
 - Produces: `Bar` (frozen dataclass), `Interval` (IntEnum: `MINUTE = 60`, `FIVE_MIN = 300`, `FIFTEEN_MIN = 900`, `HOUR = 3600`), `Interval.factor` — сколько 1m баров агрегируется в один бар этого интервала
 
-- [ ] **Step 1: Написать падающий тест**
+- [x] **Step 1: Написать падающий тест**
 
 ```python
 from decimal import Decimal
@@ -201,12 +201,12 @@ def test_interval_factors() -> None:
     assert Interval.HOUR.factor == 60
 ```
 
-- [ ] **Step 2: Убедиться, что тест падает**
+- [x] **Step 2: Убедиться, что тест падает**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_bars.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.core.bars'`
 
-- [ ] **Step 3: Реализовать `bars.py`**
+- [x] **Step 3: Реализовать `bars.py`**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -230,12 +230,12 @@ class Interval(IntEnum):
         return self.value // Interval.MINUTE.value
 ```
 
-- [ ] **Step 4: Запустить тест**
+- [x] **Step 4: Запустить тест**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_bars.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add strategylab/core/bars.py tests/test_bars.py
@@ -254,25 +254,25 @@ git commit -m "feat: closed bar model and interval enum"
 - Consumes: `connect` из задачи 1, `Bar` из задачи 2
 - Produces: `Zone(str, Enum)` со значениями `"fit"`, `"holdout"`, `"live"`; `assign_zone(conn, symbol, start_ts, end_ts, zone) -> None`; `zone_of(conn, symbol, ts) -> Zone | None`; `zones_touched(conn, symbol, start_ts, end_ts) -> tuple[Zone, ...]` — зоны, реально пересекающие окно, в порядке `Zone`; `InmutableZoneError(Exception)`
 
-- [ ] **Step 1: Написать падающие тесты**
+- [x] **Step 1: Написать падающие тесты**
 
 Три теста: (а) `zone_of` возвращает `Zone.FIT` для `ts` внутри объявленного диапазона и `None` за его пределами; (б) повторный вызов `assign_zone` на пересекающемся диапазоне поднимает `InmutableZoneError`; (в) зона, материализованная в строке бара, не совпадает с зоной бара, взятого за пределами диапазона; (г) `zones_touched` для окна, пересекающего границу `fit`/`holdout`, возвращает **обе** зоны — это пункт 4 Review Focus, и он обязан быть закреплён тестом.
 
-- [ ] **Step 2: Убедиться, что тесты падают**
+- [x] **Step 2: Убедиться, что тесты падают**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_zones.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.data.zones'`
 
-- [ ] **Step 3: Реализовать `zones.py`**
+- [x] **Step 3: Реализовать `zones.py`**
 
 `assign_zone` перед вставкой проверяет, не пересекается ли `(symbol, start_ts, end_ts)` с уже объявленным диапазоном той же зоны или любой другой. Пересечение — `InmutableZoneError`: зона бара неизменна. `zone_of` делает `SELECT` по таблице `zones` с условием `start_ts <= ? AND end_ts > ?`.
 
-- [ ] **Step 4: Запустить тесты**
+- [x] **Step 4: Запустить тесты**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_zones.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add strategylab/data/zones.py tests/test_zones.py
