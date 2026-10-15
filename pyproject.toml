@@ -7,10 +7,10 @@ name = "strategylab"
 version = "0.1.0"
 description = "Среда для тестирования торговых стратегий"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["httpx"]
 
 [dependency-groups]
-dev = ["pytest", "ruff", "mypy", "httpx"]
+dev = ["pytest", "ruff", "mypy"]
 
 [tool.setuptools]
 packages = [
@@ -22,6 +22,9 @@ packages = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "network: требует доступа к api.bybit.com",
+]
 
 [tool.ruff]
 line-length = 100

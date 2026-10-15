@@ -293,7 +293,7 @@ git commit -m "feat: immutable data zones fit holdout live"
 
 `CandleStore` живёт здесь, а не в задаче ядра: он владеет записью и чтением 1m, а `sync_1m` — его единственный писатель. `read_1m` обязан читать только столбцы `ts, open, high, low, close, volume` и **не** выбирать `zone`: драйвер реплэя не должен видеть зоны, зона приходит из шапки отчёта.
 
-- [ ] **Step 1: Написать падающие тесты на хранилище, разворот и единицы времени**
+- [x] **Step 1: Написать падающие тесты на хранилище, разворот и единицы времени**
 
 `tests/test_store.py` — круг запись-чтение и запрет утечки зоны:
 
@@ -331,27 +331,27 @@ def test_rows_are_reversed_and_timestamps_divided() -> None:
 
 Здесь же — тест, что пропущенная строка длиной не 7 поднимает `MalformedRow`.
 
-- [ ] **Step 2: Убедиться, что тесты падают**
+- [x] **Step 2: Убедиться, что тесты падают**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_store.py tests/test_sync.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.data.store'`
 
-- [ ] **Step 3: Реализовать `store.py` и `sync.py`**
+- [x] **Step 3: Реализовать `store.py` и `sync.py`**
 
 `CandleStore.write` **обязан** приводить `Decimal` к `str` перед передачей в sqlite3 — `sqlite3` не умеет биндить `Decimal` и бросит `InterfaceError`. `read_1m` выбирает шесть колонок без `zone` и **не вызывает `Decimal()` повторно**: фабрика `connect()` уже отдаёт числовые значения как `Decimal`, а нечисловые как `str`, поэтому повторная обёртка упала бы с `TypeError`. `sync_1m` — единственный писатель: он вызывает `store.write(bars, zone=None)` и обязан быть no-op при повторном запуске, что проверяется отдельно.
 
 `rows_to_bars` бросает `MalformedRow` при длине строки не 7, разворачивает список (свежие бары приходят первыми) и делит каждое `ts` на 1000. Сетевой доступ — `httpx`. `fetch_page` запрашивает `?category=linear&symbol=…&interval=1&end=…&limit=1000` и поднимает `BybitError` при `retCode != 0`. `sync_1m` идёт назад по `end`, пока не пересечёт `start_ts`, дедуплицирует по `ts`, фильтрует окном и вставляет через `INSERT OR IGNORE`.
 
-- [ ] **Step 4: Запустить тесты**
+- [x] **Step 4: Запустить тесты**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_store.py tests/test_sync.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Написать сетевой тест, помеченный на пропуск**
+- [x] **Step 5: Написать сетевой тест, помеченный на пропуск**
 
 Тест с `@pytest.mark.network`, помечающий его `skipif` при отсутствии сети: одна страница с `end = 2020-04-01T00:00:00Z` возвращает 1000 баров, самый старый из которых равен 2020-03-31T10:40Z.
 
-- [ ] **Step 6: Коммит**
+- [x] **Step 6: Коммит**
 
 ```bash
 git add strategylab/data/store.py strategylab/data/sync.py tests/test_store.py tests/test_sync.py
