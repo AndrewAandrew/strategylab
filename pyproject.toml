@@ -17,6 +17,7 @@ packages = [
     "strategylab",
     "strategylab.core",
     "strategylab.data",
+    "strategylab.spec",
 ]
 
 [tool.pytest.ini_options]
