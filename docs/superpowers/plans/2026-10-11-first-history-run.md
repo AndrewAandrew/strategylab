@@ -289,7 +289,7 @@ git commit -m "feat: immutable data zones fit holdout live"
 
 **Interfaces:**
 - Consumes: `Bar` (задача 2), `connect`/`SCHEMA` (задача 1), `Zone` (задача 3)
-- Produces: `CandleStore(conn)` с методами `write(bars: Iterable[Bar], zone: Zone | None = None) -> int`, `read_1m(symbol: str, start_ts: int, end_ts: int) -> Iterator[Bar]`, `count(symbol: str, start_ts: int, end_ts: int) -> int`; `BYBIT_KLINE = "https://api.bybit.com/v5/market/kline"`; `rows_to_bars(rows: list[list[str]]) -> list[Bar]` — разворот по убыванию, миллисекунды → секунды; `MalformedRow(Exception)`; `BybitError(Exception)`; `fetch_page(cursor_end: int, symbol: str) -> list[list[str]]`; `sync_1m(conn, symbol: str, start_ts: int, end_ts: int) -> int` — возвращает число загруженных баров
+- Produces: `CandleStore(conn, symbol)` с методами `write(bars: Iterable[Bar], zone: Zone | None = None) -> int`, `read_1m(symbol: str, start_ts: int, end_ts: int) -> Iterator[Bar]`, `count(symbol: str, start_ts: int, end_ts: int) -> int`; `BYBIT_KLINE = "https://api.bybit.com/v5/market/kline"`; `rows_to_bars(rows: list[list[str]]) -> list[Bar]` — разворот по убыванию, миллисекунды → секунды; `MalformedRow(Exception)`; `BybitError(Exception)`; `fetch_page(cursor_end: int, symbol: str) -> list[list[str]]`; `sync_1m(conn, symbol: str, start_ts: int, end_ts: int) -> int` — возвращает число загруженных баров
 
 `CandleStore` живёт здесь, а не в задаче ядра: он владеет записью и чтением 1m, а `sync_1m` — его единственный писатель. `read_1m` обязан читать только столбцы `ts, open, high, low, close, volume` и **не** выбирать `zone`: драйвер реплэя не должен видеть зоны, зона приходит из шапки отчёта.
 
@@ -326,7 +326,7 @@ def test_rows_are_reversed_and_timestamps_divided() -> None:
     bars = rows_to_bars(rows)
     assert [b.ts for b in bars] == [1717200000, 1717200060]
     assert bars[0].open == Decimal("67659.5")
-    assert bars[1].close == Decimal("67663.2")
+    assert bars[1].close == Decimal("67690.0")
 ```
 
 Здесь же — тест, что пропущенная строка длиной не 7 поднимает `MalformedRow`.
@@ -349,7 +349,7 @@ Expected: PASS
 
 - [x] **Step 5: Написать сетевой тест, помеченный на пропуск**
 
-Тест с `@pytest.mark.network`, помечающий его `skipif` при отсутствии сети: одна страница с `end = 2020-04-01T00:00:00Z` возвращает 1000 баров, самый старый из которых равен 2020-03-31T10:40Z.
+Тест с `@pytest.mark.network`, помечающий его `skipif` при отсутствии сети: одна страница с `end = 2020-04-01T00:00:00Z` возвращает 1000 баров, самый старый из которых равен 2020-03-31T07:21Z (1000 минут назад от курсора включительно; 10:40Z в ранней редакции плана соответствовало 800 баров, а не 1000, и бирже не соответствует).
 
 - [x] **Step 6: Коммит**
 
