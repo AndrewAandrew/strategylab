@@ -420,7 +420,15 @@ git commit -m "feat: interval aggregation refusing to bridge data gaps"
 
 ---
 
-### Task 6: Сверка агрегации с биржёй — инвариант 1
+### Task 6 (absorbed): Сверка агрегации с биржёй — инвариант 1
+
+**ПОГЛОЩЕНА задачей 5. Ничего не выполнять.** Сверка перенесена из задачи 6 в задачу 5,
+потому что §3.3 спеки объявляет воспроизводимость биржевых баров проверенным фактом, а ни
+один тест этого не держал. Задача 5 выполнила всё: маркер `network` зарегистрирован,
+`tests/test_aggregate_against_exchange.py` создан, живой прогон дал 408 баров при 2040
+сравнениях полей и нуле расхождений. Отдельного содержания не осталось. Нумерация задач
+7–13 не сдвигается. Чекбоксы ниже проставлены, чтобы задача не выглядела невыполненной,
+но каждый шаг исполнен внутри задачи 5, а не здесь.
 
 **Files:**
 - Create: `tests/test_aggregate_against_exchange.py`
@@ -430,25 +438,25 @@ git commit -m "feat: interval aggregation refusing to bridge data gaps"
 - Consumes: `aggregate`, `fetch_page`, `rows_to_bars`, `Bar`, `Interval`
 - Produces: ничего; тест закрывает инвариант 1 спеки
 
-- [ ] **Step 1: Зарегистрировать маркер**
+- [x] **Step 1: Зарегистрировать маркер**
 
 В `pyproject.toml` в `[tool.pytest.ini_options] markers` добавить строку `network: требует доступа к api.bybit.com`.
 
-- [ ] **Step 2: Написать тест**
+- [x] **Step 2: Написать тест**
 
 Тест с `@pytest.mark.network`, `@pytest.mark.skipif(not os.environ.get("STRATEGYLAB_NETWORK_TESTS"))`. Забирает 1m за 2024-06-01 (две страницы: `end` на конец суток и на середину), фильтрует окном, агрегирует в 5m/15m/1h, сравнивает с нативными биржевыми барами тех же интервалов по всем пяти полям с допуском `1e-8` на ценах и `1e-3` на объёме. Первое расхождение падает с `assert`, печатающим время бара и оба значения.
 
-- [ ] **Step 3: Убедиться, что тест пропускается без переменной окружения**
+- [x] **Step 3: Убедиться, что тест пропускается без переменной окружения**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_aggregate_against_exchange.py -v`
 Expected: SKIPPED
 
-- [ ] **Step 4: Запустить по-настоящему**
+- [x] **Step 4: Запустить по-настоящему**
 
 Run: `$env:STRATEGYLAB_NETWORK_TESTS="1"; .venv\Scripts\python.exe -m pytest tests/test_aggregate_against_exchange.py -v`
 Expected: PASS — 408 баров, 0 расхождений. Это уже проверено вручную 2026-10-11; при расхождении сначала ищи баг в коде, а не в бирже.
 
-- [ ] **Step 5: Убрать переменную и коммит**
+- [x] **Step 5: Убрать переменную и коммит**
 
 ```bash
 git add tests/test_aggregate_against_exchange.py pyproject.toml
