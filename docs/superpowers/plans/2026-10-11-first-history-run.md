@@ -281,17 +281,38 @@ git commit -m "feat: immutable data zones fit holdout live"
 
 ---
 
-### Task 4: Загрузка 1m с биржи
+### Task 4: Хранилище свечей и загрузка 1m с биржи
 
 **Files:**
-- Create: `strategylab/data/sync.py`
-- Test: `tests/test_sync.py`
+- Create: `strategylab/data/store.py`, `strategylab/data/sync.py`
+- Test: `tests/test_store.py`, `tests/test_sync.py`
 
 **Interfaces:**
-- Consumes: `Bar` (задача 2), `connect` (задача 1)
-- Produces: `BYBIT_KLINE = "https://api.bybit.com/v5/market/kline"`; `rows_to_bars(rows: list[list[str]]) -> list[Bar]` — разворот по убыванию, миллисекунды → секунды; `fetch_page(cursor_end: int, symbol: str) -> list[list[str]]`; `sync_1m(conn, symbol: str, start_ts: int, end_ts: int) -> int` — возвращает число загруженных баров
+- Consumes: `Bar` (задача 2), `connect`/`SCHEMA` (задача 1), `Zone` (задача 3)
+- Produces: `CandleStore(conn)` с методами `write(bars: Iterable[Bar], zone: Zone | None = None) -> int`, `read_1m(symbol: str, start_ts: int, end_ts: int) -> Iterator[Bar]`, `count(symbol: str, start_ts: int, end_ts: int) -> int`; `BYBIT_KLINE = "https://api.bybit.com/v5/market/kline"`; `rows_to_bars(rows: list[list[str]]) -> list[Bar]` — разворот по убыванию, миллисекунды → секунды; `MalformedRow(Exception)`; `BybitError(Exception)`; `fetch_page(cursor_end: int, symbol: str) -> list[list[str]]`; `sync_1m(conn, symbol: str, start_ts: int, end_ts: int) -> int` — возвращает число загруженных баров
 
-- [ ] **Step 1: Написать падающий тест на разворот и единицы времени**
+`CandleStore` живёт здесь, а не в задаче ядра: он владеет записью и чтением 1m, а `sync_1m` — его единственный писатель. `read_1m` обязан читать только столбцы `ts, open, high, low, close, volume` и **не** выбирать `zone`: драйвер реплэя не должен видеть зоны, зона приходит из шапки отчёта.
+
+- [ ] **Step 1: Написать падающие тесты на хранилище, разворот и единицы времени**
+
+`tests/test_store.py` — круг запись-чтение и запрет утечки зоны:
+
+```python
+def test_write_then_read_1m_round_trips(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.write([make_bar(1717200000)], zone=Zone.FIT)
+    assert store.count("BTCUSDT", 1717200000, 1717200060) == 1
+    assert [b.ts for b in store.read_1m("BTCUSDT", 1717200000, 1717200060)] == [1717200000]
+
+
+def test_read_1m_does_not_select_the_zone_column(tmp_path: Path) -> None:
+    store = make_store(tmp_path)
+    store.write([make_bar(1717200000)], zone=Zone.HOLDOUT)
+    bar = next(store.read_1m("BTCUSDT", 1717200000, 1717200060))
+    assert not hasattr(bar, "zone")
+```
+
+`tests/test_sync.py` — разворот и единицы времени:
 
 ```python
 from strategylab.data.sync import rows_to_bars
@@ -310,18 +331,20 @@ def test_rows_are_reversed_and_timestamps_divided() -> None:
 
 Здесь же — тест, что пропущенная строка длиной не 7 поднимает `MalformedRow`.
 
-- [ ] **Step 2: Убедиться, что тест падает**
+- [ ] **Step 2: Убедиться, что тесты падают**
 
-Run: `.venv\Scripts\python.exe -m pytest tests/test_sync.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.data.sync'`
+Run: `.venv\Scripts\python.exe -m pytest tests/test_store.py tests/test_sync.py -v`
+Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.data.store'`
 
-- [ ] **Step 3: Реализовать `sync.py`**
+- [ ] **Step 3: Реализовать `store.py` и `sync.py`**
 
-`rows_to_bars` бросает `MalformedRow` при длине строки не 7, разворачивает список (свежие бары приходят первыми) и делит каждое `ts` на 1000. Сетевой доступ — `httpx`. `fetch_page` запрашивает `?category=linear&symbol=…&interval=1&end=…&limit=1000` и поднимает `BybitError` при `retCode != 0`. `sync_1m` идёт назад по `end`, пока не пересечёт `start_ts`, дедуплицирует по `ts`, фильтрует окном и вставляет через `INSERT OR IGNORE` — повторный запуск обязан быть no-op.
+`CandleStore.write` **обязан** приводить `Decimal` к `str` перед передачей в sqlite3 — `sqlite3` не умеет биндить `Decimal` и бросит `InterfaceError`. `read_1m` выбирает шесть колонок без `zone` и **не вызывает `Decimal()` повторно**: фабрика `connect()` уже отдаёт числовые значения как `Decimal`, а нечисловые как `str`, поэтому повторная обёртка упала бы с `TypeError`. `sync_1m` — единственный писатель: он вызывает `store.write(bars, zone=None)` и обязан быть no-op при повторном запуске, что проверяется отдельно.
+
+`rows_to_bars` бросает `MalformedRow` при длине строки не 7, разворачивает список (свежие бары приходят первыми) и делит каждое `ts` на 1000. Сетевой доступ — `httpx`. `fetch_page` запрашивает `?category=linear&symbol=…&interval=1&end=…&limit=1000` и поднимает `BybitError` при `retCode != 0`. `sync_1m` идёт назад по `end`, пока не пересечёт `start_ts`, дедуплицирует по `ts`, фильтрует окном и вставляет через `INSERT OR IGNORE`.
 
 - [ ] **Step 4: Запустить тесты**
 
-Run: `.venv\Scripts\python.exe -m pytest tests/test_sync.py -v`
+Run: `.venv\Scripts\python.exe -m pytest tests/test_store.py tests/test_sync.py -v`
 Expected: PASS
 
 - [ ] **Step 5: Написать сетевой тест, помеченный на пропуск**
@@ -331,8 +354,8 @@ Expected: PASS
 - [ ] **Step 6: Коммит**
 
 ```bash
-git add strategylab/data/sync.py tests/test_sync.py
-git commit -m "feat: bybit 1m sync with descending row order"
+git add strategylab/data/store.py strategylab/data/sync.py tests/test_store.py tests/test_sync.py
+git commit -m "feat: candle store and bybit 1m sync with descending row order"
 ```
 
 ---
@@ -765,14 +788,26 @@ git commit -m "feat: report with mandatory provenance header"
 - Consumes: `Engine`, `ReplayDriver`, `BrokerSimulator`, `IntrabarOrder`, `build_report`
 - Produces: `Fork` (frozen) с полями `pessimistic: Report`, `optimistic: Report`; `run_fork(...) -> Fork` — два прогона одного и того же окна с двумя настройками `IntrabarOrder`; `diverges(verdict: Callable[[Report], bool]) -> bool`; `cli.py` с командой `run`
 
-- [ ] **Step 1: Написать тест на расхождение вердиктов**
+- [ ] **Step 1: Написать тест на расхождение вердиктов через реальный прогон**
+
+Тест обязан прогнать настоящее окно через `run_fork`, а не конструировать метрики из переданных чисел. Окно взято из спеки §13.1 — это реальные биржевые бары, где стоп и цель лежат внутри одной минуты:
 
 ```python
-def test_fork_reports_divergence_by_verdict_not_by_width() -> None:
-    f = run_fork(pessimistic_pnl=Decimal("-0.5"), optimistic_pnl=Decimal("-0.1"),
-                 verdict=lambda r: r.metrics.net_pnl > 0)
+def test_fork_diverges_when_stop_and_target_share_one_minute() -> None:
+    # Бар 00:05 2024-06-01: H=67735.6, L=67650.0. Оба уровня внутри него.
+    # Вход 67693.33, стоп 67652.71, цель 67733.95.
+    f = run_fork(store=make_store_with_real_bars(), spec=make_spec(
+        symbol="BTCUSDT", interval=Interval.MINUTE,
+        start_ts=1717200000, end_ts=1717200300,
+    ), strategy=make_fixed_position_strategy(
+        entry=Decimal("67693.33"), stop=Decimal("67652.71"),
+        take_profit=Decimal("67733.95"),
+    ), costs=CostModel())
+    assert f.pessimistic.metrics.net_pnl < f.optimistic.metrics.net_pnl
     assert f.diverges(verdict=lambda r: r.metrics.net_pnl > 0) is True
 ```
+
+Тест, который подставляет готовые `pessimistic_pnl` и `optimistic_pnl` в аргументы, запрещён: он зелёный при полностью сломанном `run_fork`.
 
 - [ ] **Step 2: Написать тест на CLI**
 
