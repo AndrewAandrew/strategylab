@@ -370,7 +370,7 @@ git commit -m "feat: candle store and bybit 1m sync with descending row order"
 - Consumes: `Bar`, `Interval`
 - Produces: `IncompleteBarGroup(Exception)` с полями `expected: int`, `actual: int`, `ts: int`; `aggregate(bars: Sequence[Bar], interval: Interval) -> list[Bar]`
 
-- [ ] **Step 1: Написать падающий тест на нормальную агрегацию**
+- [x] **Step 1: Написать падающий тест на нормальную агрегацию**
 
 ```python
 def test_aggregates_five_minutes() -> None:
@@ -385,7 +385,7 @@ def test_aggregates_five_minutes() -> None:
     assert out[0].volume == Decimal("5")
 ```
 
-- [ ] **Step 2: Написать падающий тест на разрыв внутри окна**
+- [x] **Step 2: Написать падающий тест на разрыв внутри окна**
 
 ```python
 def test_gap_does_not_produce_a_short_bar() -> None:
@@ -397,21 +397,21 @@ def test_gap_does_not_produce_a_short_bar() -> None:
     assert exc.value.actual == 4
 ```
 
-- [ ] **Step 3: Убедиться, что тесты падают**
+- [x] **Step 3: Убедиться, что тесты падают**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_aggregate.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.data.aggregate'`
 
-- [ ] **Step 4: Реализовать `aggregate.py`**
+- [x] **Step 4: Реализовать `aggregate.py`**
 
 Группировка идёт по `ts // (factor * 60)` с якорем на эпоху Unix, поэтому границы совпадают с биржевыми. `open` — первый, `close` — последний, `high` — максимум, `low` — минимум, `volume` — сумма. Если длина группы не равна `factor`, бросается `IncompleteBarGroup`. При `factor == 1` возвращается список без проверок.
 
-- [ ] **Step 5: Запустить тесты**
+- [x] **Step 5: Запустить тесты**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_aggregate.py -v`
 Expected: PASS
 
-- [ ] **Step 6: Коммит**
+- [x] **Step 6: Коммит**
 
 ```bash
 git add strategylab/data/aggregate.py tests/test_aggregate.py

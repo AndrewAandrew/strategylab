@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 
-from strategylab.core.bars import Bar
+from strategylab.core.bars import Bar, Interval
 from strategylab.data.store import CandleStore
 
 BYBIT_KLINE = "https://api.bybit.com/v5/market/kline"
@@ -13,6 +13,13 @@ _KLINE_WIDTH = 7
 _MILLISECONDS_IN_SECOND = 1000
 _PAGE_LIMIT = 1000
 _TIMEOUT = 10.0
+
+_BYBIT_INTERVAL = {
+    Interval.MINUTE: "1",
+    Interval.FIVE_MIN: "5",
+    Interval.FIFTEEN_MIN: "15",
+    Interval.HOUR: "60",
+}
 
 
 class MalformedRow(Exception):
@@ -47,18 +54,22 @@ def rows_to_bars(rows: list[list[str]]) -> list[Bar]:
     return bars
 
 
-def fetch_page(cursor_end: int, symbol: str) -> list[list[str]]:
-    """Одна страница минутных баров, заканчивающаяся баром `cursor_end` включительно.
+def fetch_page(
+    cursor_end: int, symbol: str, interval: Interval = Interval.MINUTE
+) -> list[list[str]]:
+    """Страница баров интервала, заканчивающаяся баром `cursor_end` включительно.
 
     Курсор приходит в секундах и уходит в миллисекундах: обратное направление той
     же границы сети, поэтому преобразование живёт здесь, а не у вызывающего.
+    Наш `Interval` переводится в интервал биржи здесь же — HTTP-клиент в проекте
+    один, и сверка агрегации с биржей идёт через него, а не в обход.
     """
     response = httpx.get(
         BYBIT_KLINE,
         params={
             "category": "linear",
             "symbol": symbol,
-            "interval": "1",
+            "interval": _BYBIT_INTERVAL[interval],
             "end": cursor_end * _MILLISECONDS_IN_SECOND,
             "limit": _PAGE_LIMIT,
         },

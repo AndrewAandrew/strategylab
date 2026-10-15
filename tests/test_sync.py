@@ -3,9 +3,10 @@ import sqlite3
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import pytest
 
-from strategylab.core.bars import Bar
+from strategylab.core.bars import Bar, Interval
 from strategylab.data import sync
 from strategylab.data.schema import SCHEMA, connect
 from strategylab.data.store import CandleStore
@@ -154,6 +155,34 @@ def test_sync_1m_commits_so_a_second_connection_sees_the_bars(
 
     other = connect(path)
     assert CandleStore(other, "BTCUSDT").count("BTCUSDT", 1717200000, 1717200060) == 1
+
+
+# Интервал биржи выводится из нашего Interval: HTTP-клиент в проекте один
+
+
+@pytest.mark.parametrize(
+    ("interval", "expected"),
+    [
+        (Interval.MINUTE, "1"),
+        (Interval.FIVE_MIN, "5"),
+        (Interval.FIFTEEN_MIN, "15"),
+        (Interval.HOUR, "60"),
+    ],
+)
+def test_fetch_page_asks_the_exchange_for_the_interval_mapped_from_ours(
+    monkeypatch: pytest.MonkeyPatch, interval: Interval, expected: str
+) -> None:
+    asked: list[dict[str, str]] = []
+
+    def fake_get(url: str, *, params: dict[str, str], timeout: float) -> httpx.Response:
+        asked.append(params)
+        empty = {"retCode": 0, "result": {"list": []}}
+        return httpx.Response(200, json=empty, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(sync.httpx, "get", fake_get)
+
+    assert fetch_page(CURSOR_2020_04_01, "BTCUSDT", interval) == []
+    assert asked[0]["interval"] == expected
 
 
 # Сеть
