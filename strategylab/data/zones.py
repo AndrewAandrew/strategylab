@@ -1,9 +1,13 @@
 import sqlite3
-from enum import Enum
+from enum import StrEnum
 
 
-class Zone(str, Enum):  # noqa: UP042 — форма (str, Enum) зафиксирована контрактом плана
-    """Зона данных: fit — подбор, holdout — проверка, live — живые данные."""
+class Zone(StrEnum):
+    """Зона данных: fit — подбор, holdout — проверка, live — живые данные.
+
+    Именно `StrEnum`, а не `(str, Enum)`: при смешанной форме `str(Zone.FIT)` даёт
+    `"Zone.FIT"`, и текстовый отчёт напечатал бы мусор вместо зоны.
+    """
 
     FIT = "fit"
     HOLDOUT = "holdout"
@@ -27,7 +31,7 @@ WHERE symbol = ? AND start_ts <= ? AND end_ts > ?
 """
 
 _TOUCHED = """
-SELECT DISTINCT zone FROM zones
+SELECT zone FROM zones
 WHERE symbol = ? AND start_ts < ? AND end_ts > ?
 """
 
@@ -77,8 +81,13 @@ def zones_touched(
 ) -> tuple[Zone, ...]:
     """Зоны, реально пересекающие окно [start_ts, end_ts), в порядке Zone.
 
-    Порядок объявления `Zone`, а не порядок строк в базе: шапка отчёта обязана
-    читаться одинаково при любом порядке импорта.
+    Порядок объявления `Zone`, а не порядок строк в базе и не порядок обхода
+    множества: шапка отчёта обязана быть побитово одинаковой между прогонами и при
+    любом порядке импорта. Ни множества, ни `DISTINCT` в этой функции нет —
+    дедупликация и сортировка выполняются явно по `_ORDER`.
     """
     rows = conn.execute(_TOUCHED, (symbol, end_ts, start_ts)).fetchall()
-    return tuple(sorted({Zone(row[0]) for row in rows}, key=_ORDER.__getitem__))
+    unique: dict[Zone, None] = {}
+    for row in rows:
+        unique[Zone(row[0])] = None
+    return tuple(sorted(unique, key=_ORDER.__getitem__))

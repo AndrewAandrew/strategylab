@@ -30,6 +30,22 @@ def _insert_bar(conn: sqlite3.Connection, ts: int, zone: str) -> None:
     )
 
 
+# Значение зоны — обычная строка: шапка отчёта печатает и сериализует зону как есть
+
+
+def test_zone_compares_equal_to_its_string_value() -> None:
+    assert Zone.FIT == "fit"
+    assert Zone.HOLDOUT == "holdout"
+    assert Zone.LIVE == "live"
+
+
+def test_zone_prints_as_its_string_value() -> None:
+    assert str(Zone.FIT) == "fit"
+    assert str(Zone.HOLDOUT) == "holdout"
+    assert str(Zone.LIVE) == "live"
+    assert f"{Zone.HOLDOUT}" == "holdout"
+
+
 # (а) zone_of отвечает по объявленному диапазону
 
 
@@ -165,13 +181,20 @@ def test_zones_touched_spans_all_three_zones(conn: sqlite3.Connection) -> None:
     assign_zone(conn, "BTCUSDT", 2000, 3000, Zone.HOLDOUT)
     assign_zone(conn, "BTCUSDT", 3000, 4000, Zone.FIT)
 
-    assert zones_touched(conn, "BTCUSDT", 1500, 3500) == (
-        Zone.FIT,
-        Zone.HOLDOUT,
-        Zone.LIVE,
-    )
-    assert zones_touched(conn, "BTCUSDT", 1900, 3100) == (
-        Zone.FIT,
-        Zone.HOLDOUT,
-        Zone.LIVE,
-    )
+    canonical = (Zone.FIT, Zone.HOLDOUT, Zone.LIVE)
+    assert zones_touched(conn, "BTCUSDT", 1500, 3500) == canonical
+    assert zones_touched(conn, "BTCUSDT", 1900, 3100) == canonical
+    assert zones_touched(conn, "BTCUSDT", 1000, 4000) == canonical
+    assert zones_touched(conn, "BTCUSDT", 3999, 4000) == (Zone.FIT,)
+    assert zones_touched(conn, "BTCUSDT", 2500, 3500) == (Zone.FIT, Zone.HOLDOUT)
+
+
+def test_zones_touched_is_the_same_on_every_call(conn: sqlite3.Connection) -> None:
+    assign_zone(conn, "BTCUSDT", 1000, 2000, Zone.LIVE)
+    assign_zone(conn, "BTCUSDT", 2000, 3000, Zone.HOLDOUT)
+    assign_zone(conn, "BTCUSDT", 3000, 4000, Zone.FIT)
+
+    first = zones_touched(conn, "BTCUSDT", 1500, 3500)
+    second = zones_touched(conn, "BTCUSDT", 1500, 3500)
+
+    assert first == second == (Zone.FIT, Zone.HOLDOUT, Zone.LIVE)
