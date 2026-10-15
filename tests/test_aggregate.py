@@ -189,6 +189,27 @@ def test_factor_one_returns_the_bars_unchanged_and_checks_nothing() -> None:
 
 # Сверка с биржёй: инвариант 1 спеки (§3.3) — агрегация воспроизводит биржевые бары
 
+# Полные сутки UTC: 288 пятиминутных, 96 пятнадцатиминутных, 24 часовых,
+# 408 баров всего. Без этой проверки тест проходил бы на пустом ответе
+# биржи: наша агрегация даст [], словарь биржевых баров — {}, и
+# [] == sorted({}) зелено, хотя сверять было нечего.
+FULL_DAY_BARS: list[tuple[Interval, int]] = [
+    (Interval.FIVE_MIN, 288),
+    (Interval.FIFTEEN_MIN, 96),
+    (Interval.HOUR, 24),
+]
+FULL_DAY_TOTAL = 408
+
+# Допуски: биржа округляет собственные бары, побитовое равенство не требуем —
+# 1e-8 на цены, 1e-3 на объём. Больше допуска — ошибка агрегации, а не
+# округление на стороне биржи.
+PRICE_TOLERANCE = Decimal("1e-8")
+VOLUME_TOLERANCE = Decimal("1e-3")
+
+
+def _tolerance(field: str) -> Decimal:
+    return VOLUME_TOLERANCE if field == "volume" else PRICE_TOLERANCE
+
 
 def _day_store(tmp_path: Path) -> CandleStore:
     conn = connect(tmp_path / "aggregate.db")
@@ -205,20 +226,39 @@ def _exchange_bars(interval: Interval, start: int, end: int) -> dict[int, Bar]:
 
 @pytest.mark.network
 @requires_network
-@pytest.mark.parametrize("interval", [Interval.FIVE_MIN, Interval.FIFTEEN_MIN, Interval.HOUR])
-def test_aggregation_reproduces_the_exchange_bars(interval: Interval, tmp_path: Path) -> None:
+def test_aggregation_reproduces_the_exchange_bars(tmp_path: Path) -> None:
     start, end = DAY_2024_06_01, DAY_2024_06_01 + DAY_SECONDS
 
     with live_exchange():
         store = _day_store(tmp_path)
-        ours = aggregate(list(store.read_1m(SYMBOL, start, end)), interval)
-        theirs = _exchange_bars(interval, start, end)
+        minute_bars = list(store.read_1m(SYMBOL, start, end))
+        compared = 0
+        for interval, expected_count in FULL_DAY_BARS:
+            ours = aggregate(minute_bars, interval)
+            theirs = _exchange_bars(interval, start, end)
 
-    assert [bar.ts for bar in ours] == sorted(theirs)
-    differences = [
-        (bar.ts, field, getattr(bar, field), getattr(theirs[bar.ts], field))
-        for bar in ours
-        for field in FIELDS
-        if getattr(bar, field) != getattr(theirs[bar.ts], field)
-    ]
-    assert differences == []
+            assert len(theirs) == expected_count, (
+                f"{interval.name}: биржа вернула {len(theirs)} баров вместо {expected_count} — "
+                "сверять нечего, пустой ответ не успех"
+            )
+            assert len(ours) == expected_count, (
+                f"{interval.name}: наша агрегация дала {len(ours)} баров вместо {expected_count}"
+            )
+            assert [bar.ts for bar in ours] == sorted(theirs)
+
+            differences = [
+                (bar.ts, field, getattr(bar, field), getattr(theirs[bar.ts], field))
+                for bar in ours
+                for field in FIELDS
+                if abs(getattr(bar, field) - getattr(theirs[bar.ts], field)) > _tolerance(field)
+            ]
+            assert differences == [], (
+                f"{interval.name}: первое расхождение — бар {differences[0][0]}, "
+                f"поле {differences[0][1]}: наш {differences[0][2]} "
+                f"против биржевого {differences[0][3]} "
+                f"(допуск {_tolerance(differences[0][1])}); "
+                f"всего расхождений: {len(differences)}"
+            )
+            compared += len(theirs)
+
+    assert compared == FULL_DAY_TOTAL
