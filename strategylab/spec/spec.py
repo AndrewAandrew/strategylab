@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import MAX_PREC, Decimal, localcontext
 from typing import Any
 
 from strategylab.core.bars import Interval
@@ -65,9 +65,26 @@ def _to_dict(spec: StrategySpec) -> dict[str, Any]:
         "interval": spec.interval,
         "start_ts": spec.start_ts,
         "end_ts": spec.end_ts,
-        "params": {key: str(value) for key, value in spec.params.items()},
+        "params": {key: _canonical_decimal(value) for key, value in spec.params.items()},
         "rules_ref": spec.rules_ref,
     }
+
+
+def _canonical_decimal(value: Decimal) -> str:
+    """Каноническая строка Decimal: адрес по значению, а не по записи.
+
+    normalize() применяет точность контекста, поэтому нормализуем на
+    MAX_PRECISION — ни одно _constructible значение не округлится, и длинный
+    дробный хвост доезжает до load() без потерь. Формат «f» печатает без
+    экспоненты: показатель любой длины — обычные цифры. -0 и 0 одно и то же
+    значение, поэтому схлопываемся в «0».
+    """
+    with localcontext() as ctx:
+        ctx.prec = MAX_PREC
+        normalized = value.normalize()
+    if normalized == 0:
+        normalized = Decimal(0)
+    return format(normalized, "f")
 
 
 def _validate(spec: StrategySpec) -> None:

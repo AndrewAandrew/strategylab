@@ -70,6 +70,46 @@ def test_version_is_independent_of_params_insertion_order() -> None:
     assert reordered.version == a.version
 
 
+def test_value_equal_decimals_share_one_version() -> None:
+    a = make_spec()
+    variants = (
+        replace(a, params={"slow": Decimal("21.0"), "fast": Decimal("9")}),
+        replace(a, params={"slow": Decimal("2.1E+1"), "fast": Decimal("9")}),
+        replace(a, params={"slow": Decimal("21"), "fast": Decimal("9.0")}),
+        replace(a, params={"slow": Decimal("21"), "fast": Decimal("9E+0")}),
+    )
+    for variant in variants:
+        assert variant == a
+        assert variant.version == a.version
+
+
+def test_different_value_still_separates() -> None:
+    a = make_spec()
+    b = replace(a, params={"slow": Decimal("22"), "fast": Decimal("9")})
+    assert b != a
+    assert b.version != a.version
+
+
+def test_negative_zero_hashes_as_zero() -> None:
+    zero = replace(make_spec(), params={"slow": Decimal("21"), "fast": Decimal("0")})
+    neg = replace(make_spec(), params={"slow": Decimal("21"), "fast": Decimal("-0")})
+    assert neg == zero
+    assert neg.version == zero.version
+
+
+def test_large_exponent_prints_as_plain_digits() -> None:
+    a = replace(make_spec(), params={"slow": Decimal("21"), "fast": Decimal("1E+6")})
+    plain = replace(a, params={"slow": Decimal("21"), "fast": Decimal("1000000")})
+    assert json.loads(a.dump())["params"]["fast"] == "1000000"
+    assert plain == a
+    assert plain.version == a.version
+
+
+def test_round_trip_holds_for_decimal_syntax_variants() -> None:
+    a = replace(make_spec(), params={"slow": Decimal("21.0"), "fast": Decimal("9E+0")})
+    assert StrategySpec.load(a.dump()) == a
+
+
 def test_version_is_derived_from_the_spec_object() -> None:
     a = make_spec()
     assert compute_version(a) == a.version
