@@ -18,6 +18,8 @@ packages = [
     "strategylab.core",
     "strategylab.data",
     "strategylab.spec",
+    "strategylab.broker",
+    "strategylab.strategy",
 ]
 
 [tool.pytest.ini_options]
