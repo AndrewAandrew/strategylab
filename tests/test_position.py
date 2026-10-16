@@ -34,6 +34,13 @@ def test_is_open_depends_on_qty_not_side() -> None:
     assert short.is_open
 
 
+def test_flat_position_may_carry_any_side() -> None:
+    for side in Side:
+        p = Position(side=side, qty=Decimal("0"), entry_price=Decimal("100"))
+        assert not p.is_open
+        assert p.unrealised(Decimal("1234.5")) == Decimal("0")
+
+
 def test_position_is_mutable() -> None:
     p = Position()
     p.side = Side.SELL
