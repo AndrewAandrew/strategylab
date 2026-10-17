@@ -5,8 +5,9 @@ import pytest
 
 from strategylab.broker.costs import CostModel, IntrabarOrder
 from strategylab.broker.orders import Fill, Order, OrderKind, Side
-from strategylab.broker.sim import BrokerSimulator
+from strategylab.broker.sim import BrokerSimulator, LiquidationError
 from strategylab.core.bars import Bar
+from strategylab.core.position import Position
 
 BAR_A = (1717200000, "67659.5", "67735.6", "67650.0", "67663.2")
 BAR_B = (1717200600, "67670.0", "67710.0", "67640.0", "67690.0")
@@ -16,6 +17,16 @@ BAR_GAP_DOWN = (1717200600, "67600", "67640", "67550", "67610")
 BAR_LOW_99 = (1717200000, "101", "102", "99", "100.5")
 BAR_LOW_199 = (1717200600, "201", "202", "199", "200.5")
 BAR_BOTH = (1717201200, "150", "250", "90", "200")
+BAR_FORK = (1717201200, "100", "120", "80", "100")
+BAR_TARGET_EXACT = (1717201200, "100", "110", "100", "105")
+BAR_TARGET_MISS = (1717201200, "100", "109.99", "100", "105")
+BAR_GAP_DOWN_STOP = (1717201200, "80", "85", "75", "82")
+BAR_LIQ_LONG_HIT = (1717201200, "100", "100", "40", "100")
+BAR_LIQ_LONG_BOUNDARY = (1717201200, "100", "100", "50", "100")
+BAR_LIQ_LONG_MISS = (1717201200, "100", "100", "50.01", "100")
+BAR_LIQ_SHORT_HIT = (1717201200, "100", "160", "100", "100")
+BAR_LIQ_SHORT_BOUNDARY = (1717201200, "100", "150", "100", "100")
+BAR_LIQ_SHORT_MISS = (1717201200, "100", "149.99", "100", "100")
 
 
 def _bar(spec: tuple[int, str, str, str, str]) -> Bar:
@@ -39,6 +50,21 @@ def _order(side: Side, kind: OrderKind, qty: str, limit: str | None, stop: str |
         Decimal(stop) if stop is not None else None,
         False,
     )
+
+
+def _open_long(b: BrokerSimulator, qty: str = "1", entry: str = "100") -> None:
+    b.submit(_order(Side.BUY, OrderKind.LIMIT, qty, entry, None))
+    b.apply_bar(_bar(BAR_LOW_99))
+
+
+def _open_short(b: BrokerSimulator, qty: str = "1", entry: str = "100") -> None:
+    b.submit(_order(Side.SELL, OrderKind.LIMIT, qty, entry, None))
+    b.apply_bar(_bar(BAR_LOW_99))
+
+
+def _set_long_protection(b: BrokerSimulator, stop: str = "90", target: str = "110") -> None:
+    b.submit(Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal(stop), True))
+    b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("1"), Decimal(target), None, True))
 
 
 def test_limit_buy_fills_at_limit_price_on_touch() -> None:
@@ -280,7 +306,7 @@ def test_reduce_only_is_truncated_to_open_size_at_execution() -> None:
     b.submit(_order(Side.SELL, OrderKind.STOP_MARKET, "2", None, "99"))
     fills = b.apply_bar(_bar(BAR_BOTH))
     assert [f.qty for f in fills] == [Decimal("2"), Decimal("3")]
-    assert [f.reason for f in fills] == ["stop", "limit"]
+    assert [f.reason for f in fills] == ["stop", "take_profit"]
     assert b.position.qty == Decimal("0")
     assert b.position.entry_price == Decimal("0")
 
@@ -343,3 +369,232 @@ def test_intrabar_order_values() -> None:
     assert IntrabarOrder.PESSIMISTIC == 0
     assert IntrabarOrder.OPTIMISTIC == 1
     assert IntrabarOrder.PESSIMISTIC != IntrabarOrder.OPTIMISTIC
+
+
+def test_reduce_only_stop_market_mirrors_stop_price() -> None:
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    b.submit(Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("90"), True))
+    assert b.position.stop_price == Decimal("90")
+    assert b.position.take_profit is None
+
+
+def test_reduce_only_limit_mirrors_take_profit() -> None:
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("1"), Decimal("110"), None, True))
+    assert b.position.take_profit == Decimal("110")
+    assert b.position.stop_price is None
+
+
+def test_fork_pessimistic_fills_stop_when_both_levels_inside_bar() -> None:
+    costs = CostModel()
+    b = BrokerSimulator(costs, IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    _set_long_protection(b)
+    fills = b.apply_bar(_bar(BAR_FORK))
+    stop_price = Decimal("90") * (Decimal(1) - costs.slippage)
+    assert fills == [
+        Fill(
+            ts=BAR_FORK[0],
+            side=Side.SELL,
+            price=stop_price,
+            qty=Decimal("1"),
+            fee=costs.taker_fee * Decimal("1") * stop_price,
+            reason="stop",
+        )
+    ]
+    assert b.position.qty == Decimal("0")
+    assert b.pending_orders == []
+
+
+def test_fork_optimistic_fills_target_when_both_levels_inside_bar() -> None:
+    costs = CostModel()
+    b = BrokerSimulator(costs, IntrabarOrder.OPTIMISTIC)
+    _open_long(b)
+    _set_long_protection(b)
+    fills = b.apply_bar(_bar(BAR_FORK))
+    assert fills == [
+        Fill(
+            ts=BAR_FORK[0],
+            side=Side.SELL,
+            price=Decimal("110"),
+            qty=Decimal("1"),
+            fee=costs.maker_fee * Decimal("1") * Decimal("110"),
+            reason="take_profit",
+        )
+    ]
+    assert b.position.qty == Decimal("0")
+    assert b.pending_orders == []
+
+
+def test_fork_pair_gives_opposite_outcomes_on_the_same_bar() -> None:
+    pessimistic = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    optimistic = BrokerSimulator(CostModel(), IntrabarOrder.OPTIMISTIC)
+    _open_long(pessimistic)
+    _open_long(optimistic)
+    _set_long_protection(pessimistic)
+    _set_long_protection(optimistic)
+    pessimistic_fills = pessimistic.apply_bar(_bar(BAR_FORK))
+    optimistic_fills = optimistic.apply_bar(_bar(BAR_FORK))
+    assert [f.reason for f in pessimistic_fills] == ["stop"]
+    assert [f.reason for f in optimistic_fills] == ["take_profit"]
+    assert pessimistic_fills[0].price != optimistic_fills[0].price
+
+
+def test_position_stop_fills_at_bar_open_when_bar_gaps_below_the_level() -> None:
+    costs = CostModel()
+    b = BrokerSimulator(costs, IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    _set_long_protection(b)
+    fills = b.apply_bar(_bar(BAR_GAP_DOWN_STOP))
+    gap_price = Decimal("80") * (Decimal(1) - costs.slippage)
+    assert fills == [
+        Fill(
+            ts=BAR_GAP_DOWN_STOP[0],
+            side=Side.SELL,
+            price=gap_price,
+            qty=Decimal("1"),
+            fee=costs.taker_fee * Decimal("1") * gap_price,
+            reason="stop",
+        )
+    ]
+
+
+def test_position_target_fills_exactly_at_level_without_slippage() -> None:
+    costs = CostModel()
+    b = BrokerSimulator(costs, IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    _set_long_protection(b)
+    fills = b.apply_bar(_bar(BAR_TARGET_EXACT))
+    assert fills == [
+        Fill(
+            ts=BAR_TARGET_EXACT[0],
+            side=Side.SELL,
+            price=Decimal("110"),
+            qty=Decimal("1"),
+            fee=costs.maker_fee * Decimal("1") * Decimal("110"),
+            reason="take_profit",
+        )
+    ]
+
+
+def test_position_target_does_not_fill_a_hair_below_the_level() -> None:
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    _set_long_protection(b)
+    assert b.apply_bar(_bar(BAR_TARGET_MISS)) == []
+    assert b.position.qty == Decimal("1")
+
+
+def test_position_stop_is_checked_before_resting_limits() -> None:
+    costs = CostModel()
+    b = BrokerSimulator(costs, IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    _set_long_protection(b)
+    b.submit(_order(Side.SELL, OrderKind.LIMIT, "1", "110", None))
+    fills = b.apply_bar(_bar(BAR_FORK))
+    assert [f.reason for f in fills] == ["stop", "limit"]
+    assert [f.price for f in fills] == [
+        Decimal("90") * (Decimal(1) - costs.slippage),
+        Decimal("110"),
+    ]
+    assert b.position.side is Side.SELL
+    assert b.position.qty == Decimal("1")
+
+
+def test_exit_cancels_all_paired_reduce_only_orders() -> None:
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    _set_long_protection(b)
+    b.apply_bar(_bar(BAR_GAP_DOWN_STOP))
+    assert b.pending_orders == []
+    assert b.position.stop_price is None
+    assert b.position.take_profit is None
+
+
+def test_dead_paired_order_does_not_execute_on_the_next_bar() -> None:
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    _set_long_protection(b)
+    b.apply_bar(_bar(BAR_GAP_DOWN_STOP))
+    assert b.pending_orders == []
+    assert b.apply_bar(_bar(BAR_TARGET_EXACT)) == []
+
+
+def test_liquidation_long_raises_when_adverse_extreme_reaches_margin() -> None:
+    b = BrokerSimulator(CostModel(leverage=Decimal("2")), IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    with pytest.raises(LiquidationError):
+        b.apply_bar(_bar(BAR_LIQ_LONG_HIT))
+    assert b.position.qty == Decimal("0")
+    assert b.position.entry_price == Decimal("0")
+    assert b.pending_orders == []
+
+
+def test_liquidation_long_does_not_raise_a_hair_above_the_margin_point() -> None:
+    b = BrokerSimulator(CostModel(leverage=Decimal("2")), IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    assert b.apply_bar(_bar(BAR_LIQ_LONG_MISS)) == []
+    assert b.position.qty == Decimal("1")
+
+
+def test_liquidation_short_raises_when_adverse_extreme_reaches_margin() -> None:
+    b = BrokerSimulator(CostModel(leverage=Decimal("2")), IntrabarOrder.PESSIMISTIC)
+    _open_short(b)
+    with pytest.raises(LiquidationError):
+        b.apply_bar(_bar(BAR_LIQ_SHORT_HIT))
+    assert b.position.qty == Decimal("0")
+    assert b.position.entry_price == Decimal("0")
+
+
+def test_liquidation_short_does_not_raise_a_hair_below_the_margin_point() -> None:
+    b = BrokerSimulator(CostModel(leverage=Decimal("2")), IntrabarOrder.PESSIMISTIC)
+    _open_short(b)
+    assert b.apply_bar(_bar(BAR_LIQ_SHORT_MISS)) == []
+    assert b.position.qty == Decimal("1")
+
+
+def test_liquidation_boundary_exact_point_raises_for_both_directions() -> None:
+    long_sim = BrokerSimulator(CostModel(leverage=Decimal("2")), IntrabarOrder.PESSIMISTIC)
+    short_sim = BrokerSimulator(CostModel(leverage=Decimal("2")), IntrabarOrder.PESSIMISTIC)
+    _open_long(long_sim)
+    _open_short(short_sim)
+    with pytest.raises(LiquidationError):
+        long_sim.apply_bar(_bar(BAR_LIQ_LONG_BOUNDARY))
+    with pytest.raises(LiquidationError):
+        short_sim.apply_bar(_bar(BAR_LIQ_SHORT_BOUNDARY))
+
+
+def test_position_closed_by_its_stop_does_not_liquidate() -> None:
+    b = BrokerSimulator(CostModel(leverage=Decimal("2")), IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    _set_long_protection(b, stop="60", target="110")
+    fills = b.apply_bar(_bar(BAR_LIQ_LONG_HIT))
+    assert [f.reason for f in fills] == ["stop"]
+    assert b.position.qty == Decimal("0")
+
+
+def test_position_closed_by_stop_market_order_does_not_liquidate() -> None:
+    b = BrokerSimulator(CostModel(leverage=Decimal("2")), IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    b.submit(_order(Side.SELL, OrderKind.STOP_MARKET, "1", None, "60"))
+    fills = b.apply_bar(_bar(BAR_LIQ_LONG_HIT))
+    assert [f.reason for f in fills] == ["stop"]
+    assert b.position.qty == Decimal("0")
+
+
+def test_position_is_read_only_publicly() -> None:
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    with pytest.raises(AttributeError):
+        b.position = Position()  # type: ignore[misc]
+    assert b.position.qty == Decimal("0")
+    assert b.position.is_open is False
+
+
+def test_take_profit_reason_is_pinned() -> None:
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    _set_long_protection(b)
+    fills = b.apply_bar(_bar(BAR_TARGET_EXACT))
+    assert [f.reason for f in fills] == ["take_profit"]

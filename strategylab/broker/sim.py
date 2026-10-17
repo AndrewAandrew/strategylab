@@ -19,8 +19,13 @@ class BrokerSimulator:
 
     costs: CostModel
     intrabar: IntrabarOrder
-    position: Position = field(default_factory=Position)
+    _position: Position = field(default_factory=Position)
     _pending: list[Order] = field(default_factory=list, repr=False)
+
+    @property
+    def position(self) -> Position:
+        """Открытая позиция, только для чтения: сеттера нет, писатель один — apply_fill."""
+        return self._position
 
     @property
     def pending_orders(self) -> list[Order]:
@@ -32,22 +37,44 @@ class BrokerSimulator:
             raise ValueError("stop_market order requires stop_price")
         if order.kind is OrderKind.LIMIT and order.limit_price is None:
             raise ValueError("limit order requires limit_price")
-        if order.reduce_only and order.qty > self.position.qty:
+        if order.reduce_only and order.qty > self._position.qty:
             raise ValueError("reduce_only order is larger than the open position")
+        if order.reduce_only and self._position.is_open:
+            self._mirror_reduced(order)
         self._pending.append(order)
+
+    def _mirror_reduced(self, order: Order) -> None:
+        """reduce-only заявка зеркалит свой уровень в позицию."""
+        if order.kind is OrderKind.STOP_MARKET and order.stop_price is not None:
+            self._position.stop_price = order.stop_price
+        elif order.kind is OrderKind.LIMIT and order.limit_price is not None:
+            self._position.take_profit = order.limit_price
 
     def apply_bar(self, bar: Bar) -> list[Fill]:
         fills = self._apply_stops(bar)
-        # Шаг (2) порядка обработки бара — стоп-лосс и тейк-профит открытой
-        # позиции по high/low с учётом IntrabarOrder — реализует задача B.
+        self._cancel_reduced()
+        fills += self._apply_exits(bar)
+        self._cancel_reduced()
+        self._apply_liquidation(bar)
         fills += self._apply_limits(bar)
+        self._cancel_reduced()
         fills += self._apply_markets(bar)
+        self._cancel_reduced()
         return fills
+
+    def _cancel_reduced(self) -> None:
+        """Позиция плоская: все покоящиеся парные reduce-only заявки снимаются."""
+        if self._position.is_open:
+            return
+        self._pending = [order for order in self._pending if not order.reduce_only]
 
     def _apply_stops(self, bar: Bar) -> list[Fill]:
         fills: list[Fill] = []
         rest: list[Order] = []
         for order in self._pending:
+            if order.reduce_only:
+                rest.append(order)
+                continue
             qty = self._effective_qty(order)
             if qty is None:
                 continue
@@ -56,9 +83,74 @@ class BrokerSimulator:
                 rest.append(order)
             else:
                 fills.append(fill)
-                self.position.apply_fill(fill)
+                self._position.apply_fill(fill)
         self._pending = rest
         return fills
+
+    def _apply_exits(self, bar: Bar) -> list[Fill]:
+        """Стоп-лосс и тейк-профит открытой позиции по high/low с учётом IntrabarOrder."""
+        position = self._position
+        if not position.is_open:
+            return []
+        stop_hit = self._level_hit(position.stop_price, position.side, bar, is_stop=True)
+        target_hit = self._level_hit(position.take_profit, position.side, bar, is_stop=False)
+        if not stop_hit and not target_hit:
+            return []
+        if stop_hit and target_hit:
+            take_target = self.intrabar is IntrabarOrder.OPTIMISTIC
+        else:
+            take_target = target_hit
+        exit_side = self._exit_side(position.side)
+        if take_target:
+            assert position.take_profit is not None
+            price = position.take_profit
+            fee_rate = self.costs.maker_fee
+            reason = "take_profit"
+        else:
+            assert position.stop_price is not None
+            price = self._slipped(self._stop_base(bar, exit_side, position.stop_price), exit_side)
+            fee_rate = self.costs.taker_fee
+            reason = "stop"
+        fill = self._make_fill(bar, exit_side, price, fee_rate, reason, position.qty)
+        self._position.apply_fill(fill)
+        self._cancel_reduced()
+        return [fill]
+
+    @staticmethod
+    def _level_hit(level: Decimal | None, side: Side, bar: Bar, *, is_stop: bool) -> bool:
+        """Достигнут ли уровень бара: стоп по неблагоприятной, цель по благоприятной стороне."""
+        if level is None:
+            return False
+        if side is Side.BUY:
+            return bar.low <= level if is_stop else bar.high >= level
+        return bar.high >= level if is_stop else bar.low <= level
+
+    @staticmethod
+    def _exit_side(side: Side) -> Side:
+        return Side.SELL if side is Side.BUY else Side.BUY
+
+    def _apply_liquidation(self, bar: Bar) -> None:
+        position = self._position
+        if not position.is_open:
+            return
+        adverse = bar.low if position.side is Side.BUY else bar.high
+        margin = position.qty * position.entry_price / self.costs.leverage
+        unrealised = position.unrealised(adverse)
+        if unrealised > -margin:
+            return
+        fill = Fill(
+            ts=bar.ts,
+            side=self._exit_side(position.side),
+            price=adverse,
+            qty=position.qty,
+            fee=self.costs.taker_fee * position.qty * adverse,
+            reason="liquidation",
+        )
+        self._position.apply_fill(fill)
+        self._cancel_reduced()
+        raise LiquidationError(
+            f"margin exhausted: position liquidated at {adverse}, unrealised {unrealised}"
+        )
 
     def _apply_limits(self, bar: Bar) -> list[Fill]:
         fills: list[Fill] = []
@@ -72,7 +164,7 @@ class BrokerSimulator:
                 rest.append(order)
             else:
                 fills.append(fill)
-                self.position.apply_fill(fill)
+                self._position.apply_fill(fill)
         self._pending = rest
         return fills
 
@@ -88,7 +180,7 @@ class BrokerSimulator:
                 rest.append(order)
             else:
                 fills.append(fill)
-                self.position.apply_fill(fill)
+                self._position.apply_fill(fill)
         self._pending = rest
         return fills
 
@@ -96,9 +188,9 @@ class BrokerSimulator:
         """Размер филла; None — reduce-only заявка при плоской позиции отбрасывается."""
         if not order.reduce_only:
             return order.qty
-        if self.position.qty == 0:
+        if self._position.qty == 0:
             return None
-        return min(order.qty, self.position.qty)
+        return min(order.qty, self._position.qty)
 
     def _stop_base(self, bar: Bar, side: Side, stop: Decimal) -> Decimal:
         """Уровень исполнения стопа: stop при касании снизу, open при пробое гэпом."""
@@ -115,7 +207,7 @@ class BrokerSimulator:
         if order.side is Side.SELL and bar.low > stop:
             return None
         price = self._slipped(self._stop_base(bar, order.side, stop), order.side)
-        return self._make_fill(bar, order, price, self.costs.taker_fee, "stop", qty)
+        return self._make_fill(bar, order.side, price, self.costs.taker_fee, "stop", qty)
 
     def _limit_fill(self, order: Order, bar: Bar, qty: Decimal) -> Fill | None:
         if order.kind is not OrderKind.LIMIT or order.limit_price is None:
@@ -124,13 +216,16 @@ class BrokerSimulator:
             return None
         if order.side is Side.SELL and bar.high < order.limit_price:
             return None
-        return self._make_fill(bar, order, order.limit_price, self.costs.maker_fee, "limit", qty)
+        reason = "take_profit" if order.reduce_only and qty == self._position.qty else "limit"
+        return self._make_fill(
+            bar, order.side, order.limit_price, self.costs.maker_fee, reason, qty
+        )
 
     def _market_fill(self, order: Order, bar: Bar, qty: Decimal) -> Fill | None:
         if order.kind is not OrderKind.MARKET:
             return None
         price = self._slipped(bar.close, order.side)
-        return self._make_fill(bar, order, price, self.costs.taker_fee, "market", qty)
+        return self._make_fill(bar, order.side, price, self.costs.taker_fee, "market", qty)
 
     def _slipped(self, price: Decimal, side: Side) -> Decimal:
         if side is Side.BUY:
@@ -140,7 +235,7 @@ class BrokerSimulator:
     def _make_fill(
         self,
         bar: Bar,
-        order: Order,
+        side: Side,
         price: Decimal,
         fee_rate: Decimal,
         reason: str,
@@ -148,7 +243,7 @@ class BrokerSimulator:
     ) -> Fill:
         return Fill(
             ts=bar.ts,
-            side=order.side,
+            side=side,
             price=price,
             qty=qty,
             fee=fee_rate * qty * price,
