@@ -144,7 +144,7 @@ class BrokerSimulator:
             price=adverse,
             qty=position.qty,
             fee=self.costs.taker_fee * position.qty * adverse,
-            reason="liquidation",
+            reason="stop",
         )
         self._position.apply_fill(fill)
         self._cancel_reduced()
