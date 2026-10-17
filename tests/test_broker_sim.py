@@ -566,6 +566,22 @@ def test_liquidation_boundary_exact_point_raises_for_both_directions() -> None:
         short_sim.apply_bar(_bar(BAR_LIQ_SHORT_BOUNDARY))
 
 
+def test_liquidation_close_reports_stop_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    b = BrokerSimulator(CostModel(leverage=Decimal("2")), IntrabarOrder.PESSIMISTIC)
+    _open_long(b)
+    applied: list[Fill] = []
+    original = Position.apply_fill
+
+    def spy(self: Position, fill: Fill) -> None:
+        applied.append(fill)
+        original(self, fill)
+
+    monkeypatch.setattr(Position, "apply_fill", spy)
+    with pytest.raises(LiquidationError):
+        b.apply_bar(_bar(BAR_LIQ_LONG_HIT))
+    assert [f.reason for f in applied] == ["stop"]
+
+
 def test_position_closed_by_its_stop_does_not_liquidate() -> None:
     b = BrokerSimulator(CostModel(leverage=Decimal("2")), IntrabarOrder.PESSIMISTIC)
     _open_long(b)
