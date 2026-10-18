@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 from strategylab.broker.costs import CostModel, IntrabarOrder
 from strategylab.core.metrics import Metrics
@@ -54,6 +56,36 @@ class Report:
             f"max_drawdown: {_plain(m.max_drawdown)}",
         ))
 
+    def to_json(self) -> str:
+        """JSON отчёта: фиксированный порядок ключей — пять полей шапки, затем метрики.
+
+        Поля метрик перечислены белым списком: у Metrics есть приватные накопители,
+        которые asdict/vars выдали бы в отчёт. Decimal — строкой, None — как null.
+        """
+        m = self.metrics
+        payload: dict[str, Any] = {
+            "spec_version": self.spec_version,
+            "zones_used": [str(zone) for zone in self.zones_used],
+            "costs": {
+                "taker_fee": _plain(self.costs.taker_fee),
+                "maker_fee": _plain(self.costs.maker_fee),
+                "slippage": _plain(self.costs.slippage),
+                "leverage": _plain(self.costs.leverage),
+            },
+            "trials": self.trials,
+            "intrabar": self.intrabar.name,
+            "trades": m.trades,
+            "wins": m.wins,
+            "losses": m.losses,
+            "net_pnl": _plain(m.net_pnl),
+            "equity": _plain(m.equity),
+            "max_drawdown": _plain(m.max_drawdown),
+            "profit_factor": _optional_plain(m.profit_factor()),
+            "win_rate": _optional_plain(m.win_rate()),
+            "sharpe": _optional_plain(m.sharpe()),
+        }
+        return json.dumps(payload)
+
 
 def build_report(
     spec: StrategySpec,
@@ -95,3 +127,8 @@ def build_report(
 def _plain(value: Decimal) -> str:
     """Decimal без экспоненты: отчёты сравнивают по diff, «1E-7» не нужен."""
     return format(value, "f")
+
+
+def _optional_plain(value: Decimal | None) -> str | None:
+    """Decimal строкой; None остаётся None — в JSON это null, а не «Infinity»."""
+    return None if value is None else _plain(value)
