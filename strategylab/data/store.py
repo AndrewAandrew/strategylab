@@ -35,6 +35,11 @@ class CandleStore:
         self._conn = conn
         self._symbol = symbol
 
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """Соединение с базой, только для чтения: сеттера нет, писатель один — вызывающий."""
+        return self._conn
+
     def write(self, bars: Iterable[Bar], zone: Zone | None = None) -> int:
         """Пишет бары и возвращает число действительно вставленных строк.
 

@@ -117,6 +117,15 @@ def test_two_symbols_stored_through_one_connection_do_not_mix(tmp_path: Path) ->
 # Транзакция принадлежит вызывающему: хранилище не коммитит
 
 
+def test_conn_property_is_read_only(tmp_path: Path) -> None:
+    conn = connect(tmp_path / "store.db")
+    store = CandleStore(conn, "BTCUSDT")
+
+    assert store.conn is conn
+    assert isinstance(CandleStore.conn, property)
+    assert CandleStore.conn.fset is None
+
+
 def test_write_does_not_commit(tmp_path: Path) -> None:
     store = make_store(tmp_path)
     store.write([make_bar(1717200000)], zone=Zone.FIT)

@@ -45,7 +45,7 @@ def run_fork(
     шапки — от `zones_touched` по окну спека, а не от драйвера: драйвер зон не
     видит и видеть не должен.
     """
-    zones = zones_touched(store._conn, spec.symbol, spec.start_ts, spec.end_ts)
+    zones = zones_touched(store.conn, spec.symbol, spec.start_ts, spec.end_ts)
     return Fork(
         pessimistic=_run_once(store, spec, strategy, costs, IntrabarOrder.PESSIMISTIC, zones),
         optimistic=_run_once(store, spec, strategy, costs, IntrabarOrder.OPTIMISTIC, zones),
