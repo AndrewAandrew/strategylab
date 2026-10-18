@@ -3,7 +3,11 @@ from pathlib import Path
 
 CORE_DIR = Path(__file__).resolve().parents[1] / "strategylab" / "core"
 PACKAGE_DIR = Path(__file__).resolve().parents[1] / "strategylab"
-FORBIDDEN = ("from strategylab.drivers", "import strategylab.drivers")
+FORBIDDEN = (
+    "from strategylab.drivers",
+    "import strategylab.drivers",
+    "from strategylab import drivers",
+)
 ALLOWED_REASONS = {"stop", "take_profit", "limit", "market"}
 
 
