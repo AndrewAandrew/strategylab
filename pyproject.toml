@@ -20,6 +20,7 @@ packages = [
     "strategylab.spec",
     "strategylab.broker",
     "strategylab.strategy",
+    "strategylab.drivers",
 ]
 
 [tool.pytest.ini_options]
