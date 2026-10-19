@@ -1,6 +1,6 @@
 # План 1 — один прогон по истории, пригодный для чтения
 
-> **Для агентских исполнителей:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (рекомендуется) или superpowers:executing-plans для выполнения этого плана по задачам. Шаги используют синтаксис чекбоксов (`- [ ]`) для отслеживания.
+> **Для агентских исполнителей:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (рекомендуется) или superpowers:executing-plans для выполнения этого плана по задачам. Шаги используют синтаксис чекбоксов (`- [x]`) для отслеживания.
 
 **Цель:** реализовать вертикальный срез, на котором одна стратегия с фиксированными параметрами прогоняется по истории и выдаёт отчёт, которому можно верить — с зонами данных, издержками, маржой, вилкой и обязательной шапкой.
 
@@ -475,7 +475,7 @@ git commit -m "test: verify local aggregation matches bybit bars"
 - Consumes: `Interval`
 - Produces: `StrategySpec` (frozen dataclass) с полями `name: str`, `symbol: str`, `interval: Interval`, `start_ts: int`, `end_ts: int`, `params: Mapping[str, Decimal]`, `rules_ref: str`, `version: str`; `compute_version(spec) -> str` — первые 12 символов sha256 канонического JSON без поля `version`; `StrategySpec.dump() -> str`, `StrategySpec.load(text: str) -> StrategySpec`
 
-- [ ] **Step 1: Написать падающий тест на стабильность версии**
+- [x] **Step 1: Написать падающий тест на стабильность версии**
 
 ```python
 def test_version_is_stable_and_content_addressed() -> None:
@@ -488,21 +488,21 @@ def test_version_is_stable_and_content_addressed() -> None:
 
 Здесь же: тест, что `load(dump(a)) == a` с точностью до версии, и что `rules_ref` обязателен и непуст.
 
-- [ ] **Step 2: Убедиться, что тест падает**
+- [x] **Step 2: Убедиться, что тест падает**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_spec.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.spec.spec'`
 
-- [ ] **Step 3: Реализовать `spec.py`**
+- [x] **Step 3: Реализовать `spec.py`**
 
 `compute_version` строит `json.dumps` с `sort_keys=True`, `separators=(",", ":")`, все `Decimal` — строкой, и берёт `sha256(...).hexdigest()[:12]`. Валидация в `__post_init__`: `name`, `symbol`, `rules_ref` непустые; `start_ts < end_ts`; `interval` — член `Interval`.
 
-- [ ] **Step 4: Запустить тесты**
+- [x] **Step 4: Запустить тесты**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_spec.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add strategylab/spec tests/test_spec.py
@@ -526,7 +526,7 @@ git commit -m "feat: content-addressed strategy specification"
 
 **Интерпретация спеки, зафиксированная здесь:** спека §5 перечисляет «правила входа и выхода» среди содержимого описания. В этом плане правила — это **исполняемый код** в `strategylab/strategy/`, а описание хранит ссылку `rules_ref` на модуль и данные параметров. Причина: правила, выраженные данными, порождают две версии «одного и того же» правила, и их невозможно проверить покрытием.
 
-- [ ] **Step 1: Написать падающий тест на реестр**
+- [x] **Step 1: Написать падающий тест на реестр**
 
 ```python
 def test_build_returns_sma_cross_with_params() -> None:
@@ -536,25 +536,25 @@ def test_build_returns_sma_cross_with_params() -> None:
 
 Здесь же: `build("нет_такой", {})` поднимает `UnknownStrategy`.
 
-- [ ] **Step 2: Написать падающий тест на `sma_cross`**
+- [x] **Step 2: Написать падающий тест на `sma_cross`**
 
 Пять баров с заведомо известной скользящей: `sma_cross` не выдаёт ордеров до появления нужного числа баров в состоянии, а при пересечении выдаёт ровно один `Order` вида `MARKET` на следующий интервал.
 
-- [ ] **Step 3: Убедиться, что тесты падают**
+- [x] **Step 3: Убедиться, что тесты падают**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_strategy_base.py tests/test_examples.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.strategy.base'`
 
-- [ ] **Step 4: Реализовать `base.py` и `examples.py`**
+- [x] **Step 4: Реализовать `base.py` и `examples.py`**
 
 `Strategy` — `typing.Protocol` с `runtime_checkable`. `examples.py` содержит `SmaCrossStrategy` (состояние — два deque, длина равна `slow`, сигнал на пересечении средних) и `BuyHoldStrategy` (один `MARKET BUY` на первом баре, `reduce_only`-закрытие на последнем известном баре окна). Обе возвращают `list[Order]` и никогда не обращаются к `strategylab.broker`.
 
-- [ ] **Step 5: Запустить тесты**
+- [x] **Step 5: Запустить тесты**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_strategy_base.py tests/test_examples.py -v`
 Expected: PASS
 
-- [ ] **Step 6: Коммит**
+- [x] **Step 6: Коммит**
 
 ```bash
 git add strategylab/strategy tests/test_strategy_base.py tests/test_examples.py
@@ -573,7 +573,7 @@ git commit -m "feat: strategy contract and two reference strategies"
 - Consumes: `Decimal`
 - Produces: `Position` с полями `side`, `qty: Decimal`, `entry_price: Decimal`, `stop_price: Decimal | None`, `take_profit: Decimal | None`, `unrealised(price: Decimal) -> Decimal`, `is_open -> bool`; `Metrics` с полями `trades: int`, `wins: int`, `losses: int`, `net_pnl: Decimal`, `equity: Decimal`, `max_drawdown: Decimal`, `record(fill: Fill) -> None`, `profit_factor() -> Decimal | None`, `win_rate() -> Decimal | None`, `sharpe() -> Decimal | None`
 
-- [ ] **Step 1: Написать тест на `profit_factor` без убыточных сделок**
+- [x] **Step 1: Написать тест на `profit_factor` без убыточных сделок**
 
 ```python
 def test_profit_factor_is_none_without_losses() -> None:
@@ -585,21 +585,21 @@ def test_profit_factor_is_none_without_losses() -> None:
 
 Здесь же: пустые метрики дают `None` от всех трёх методов; `sharpe()` при нулевом знаменателе возвращает `None`; `max_drawdown` считается по пику капитала, а не от нуля.
 
-- [ ] **Step 2: Убедиться, что тесты падают**
+- [x] **Step 2: Убедиться, что тесты падают**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_position.py tests/test_metrics.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.core.position'`
 
-- [ ] **Step 3: Реализовать оба модуля**
+- [x] **Step 3: Реализовать оба модуля**
 
 `profit_factor` возвращает `None` при `losses == 0`. `sharpe` — `None` при отсутствии закрытых сделок либо при нулевом стандартном отклонении. Никакой код в проекте не имеет права конструировать `Decimal("Infinity")`.
 
-- [ ] **Step 4: Запустить тесты**
+- [x] **Step 4: Запустить тесты**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_position.py tests/test_metrics.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Коммит**
+- [x] **Step 5: Коммит**
 
 ```bash
 git add strategylab/core/position.py strategylab/core/metrics.py tests
@@ -618,7 +618,7 @@ git commit -m "feat: position and metrics with null-safe ratios"
 - Consumes: `Bar`, `Order`, `Side`, `OrderKind`, `Fill` (задача 8), `Position`, `Metrics` (задача 9)
 - Produces: `CostModel` (frozen: `taker_fee: Decimal = Decimal("0.0006")`, `maker_fee: Decimal = Decimal("0.0002")`, `slippage: Decimal = Decimal("0.0005")`, `leverage: Decimal = Decimal("1")`); `IntrabarOrder(IntEnum)` = `PESSIMISTIC = 0`, `OPTIMISTIC = 1`; `LiquidationError(Exception)`; `BrokerSimulator(costs: CostModel, intrabar: IntrabarOrder)` с методом `submit(order: Order) -> None` и `apply_bar(bar: Bar) -> list[Fill]`
 
-- [ ] **Step 1: Написать тест на лимитное исполнение**
+- [x] **Step 1: Написать тест на лимитное исполнение**
 
 ```python
 def test_limit_buy_fills_at_limit_price_on_touch() -> None:
@@ -629,29 +629,29 @@ def test_limit_buy_fills_at_limit_price_on_touch() -> None:
     assert fills[0].price == Decimal("67652.71")
 ```
 
-- [ ] **Step 2: Написать тест на вилку стоп/цель**
+- [x] **Step 2: Написать тест на вилку стоп/цель**
 
 Позиция открыта, у неё `stop_price` и `take_profit`, оба внутри диапазона бара. При `PESSIMISTIC` заполняется стоп, при `OPTIMISTIC` — цель. Проверяется `reason` фила.
 
-- [ ] **Step 3: Написать тест на ликвидацию**
+- [x] **Step 3: Написать тест на ликвидацию**
 
 Позиция с плечом 1 при падении цены ниже точки, обеспеченной маржой, поднимает `LiquidationError` на баре, а не возвращает отрицательный капитал.
 
-- [ ] **Step 4: Убедиться, что тесты падают**
+- [x] **Step 4: Убедиться, что тесты падают**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_broker_sim.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.broker'`
 
-- [ ] **Step 5: Реализовать брокер**
+- [x] **Step 5: Реализовать брокер**
 
 `apply_bar` обрабатывает бар строго в этом порядке: (1) срабатывание стоп-ордеров по `stop_price`, (2) проверка стоп-лосса и тейк-профита открытой позиции по `high`/`low` с учётом `IntrabarOrder`, (3) исполнение оставшихся лимитных заявок по касанию цены, (4) исполнение рыночных заявок по `close` этого бара — так как сигнал приходит на закрытии бара N и действует на следующий, заявка, поданная стратегией на этом баре, исполнится лишь на следующем вызове. Комиссия берётся по `maker_fee` для лимита и `taker_fee` для рынка и стопа. Рыночная цена = `close * (1 ± slippage)` по направлению сделки.
 
-- [ ] **Step 6: Запустить тесты**
+- [x] **Step 6: Запустить тесты**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_broker_sim.py -v`
 Expected: PASS
 
-- [ ] **Step 7: Коммит**
+- [x] **Step 7: Коммит**
 
 ```bash
 git add strategylab/broker tests
@@ -670,7 +670,7 @@ git commit -m "feat: paper broker with fees margin and intrabar ordering"
 - Consumes: `Bar`, `Strategy`, `BrokerSimulator`, `Metrics`, `aggregate`, `CandleStore`
 - Produces: `BarFeed(Protocol)` с `bars() -> Iterator[Bar]`; `CandleStore.read_1m(symbol, start_ts, end_ts) -> Iterator[Bar]`; `ReplayDriver(store, symbol, interval, start_ts, end_ts) -> BarFeed`; `Engine.run(feed, strategy, broker, metrics) -> Metrics` — возвращает `Metrics` и роняет `strategylab.drivers` только на уровне модуля, не на уровне ядра
 
-- [ ] **Step 1: Написать тест на порядок «сигнал — следующий бар»**
+- [x] **Step 1: Написать тест на порядок «сигнал — следующий бар»**
 
 ```python
 def test_order_from_bar_n_fills_on_bar_n_plus_one() -> None:
@@ -680,16 +680,16 @@ def test_order_from_bar_n_fills_on_bar_n_plus_one() -> None:
     assert first_fill.ts >= bars[103].ts
 ```
 
-- [ ] **Step 2: Написать тест на слойность**
+- [x] **Step 2: Написать тест на слойность**
 
 Расширить `tests/test_layering.py`: обойти `.py` в `strategylab/core/` и проверить отсутствие подстроки `strategylab.drivers`. Ожидание — по-прежнему пусто.
 
-- [ ] **Step 3: Убедиться, что тесты падают**
+- [x] **Step 3: Убедиться, что тесты падают**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_engine.py tests/test_layering.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.core.engine'`
 
-- [ ] **Step 4: Реализовать `feed.py`, `engine.py`, `replay.py`**
+- [x] **Step 4: Реализовать `feed.py`, `engine.py`, `replay.py`**
 
 `Engine.run` на каждом баре: сначала `broker.apply_bar(bar)`, затем `strategy.on_bar(bar, state)`, затем `broker.submit(...)` для всех полученных ордеров.
 
@@ -700,16 +700,16 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.core.engin
 
 Разрыв внутри окна обязан приводить к `IncompleteBarGroup` из задачи 5, а не к пропущенному бару.
 
-- [ ] **Step 5: Написать тест на ленивую загрузку**
+- [x] **Step 5: Написать тест на ленивую загрузку**
 
 Тест со счётчиком обращений к `CandleStore.read_1m`: прогон стратегии, не открывающей позицию, на окне из 2000 минут и интервале 1h обязан прочитать **ноль** минутных баров для исполнения. Тот же прогон со стратегией, держащей позицию весь час, обязан прочитать их.
 
-- [ ] **Step 6: Запустить тесты**
+- [x] **Step 6: Запустить тесты**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_engine.py tests/test_layering.py -v`
 Expected: PASS
 
-- [ ] **Step 7: Коммит**
+- [x] **Step 7: Коммит**
 
 ```bash
 git add strategylab/core strategylab/drivers tests
@@ -728,7 +728,7 @@ git commit -m "feat: replay engine driving strategy and broker"
 - Consumes: `StrategySpec`, `Metrics`, `Zone`, `CostModel`, `IntrabarOrder`
 - Produces: `MissingReportHeader(Exception)`; `Report` (frozen) с полями `spec_version: str`, `zones_used: tuple[Zone, ...]`, `costs: CostModel`, `trials: int`, `intrabar: IntrabarOrder`, `metrics: Metrics`; `build_report(...) -> Report`, бросающая `MissingReportHeader`, если любое из первых четырёх полей — `None`; `Report.to_json() -> str` — `profit_factor` печатается как `null`; `Report.to_text() -> str`
 
-- [ ] **Step 1: Написать тест на обязательность шапки**
+- [x] **Step 1: Написать тест на обязательность шапки**
 
 ```python
 def test_report_refuses_missing_header() -> None:
@@ -738,7 +738,7 @@ def test_report_refuses_missing_header() -> None:
                       metrics=Metrics())
 ```
 
-- [ ] **Step 2: Написать тест на `null` вместо бесконечности**
+- [x] **Step 2: Написать тест на `null` вместо бесконечности**
 
 ```python
 def test_profit_factor_serialises_as_null() -> None:
@@ -763,21 +763,21 @@ def test_single_bar_window_does_not_divide_by_zero() -> None:
 
 Пустой прогон и окно из одного бара обязаны давать валидный отчёт. Успешная стратегия не имеет права ронять систему на `json.dump`.
 
-- [ ] **Step 3: Убедиться, что тесты падают**
+- [x] **Step 3: Убедиться, что тесты падают**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_report.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.report'`
 
-- [ ] **Step 4: Реализовать `report.py`**
+- [x] **Step 4: Реализовать `report.py`**
 
 `to_json` строит словарь в фиксированном порядке: пять полей шапки, затем метрики. Значения `Decimal` сериализуются строками; `None` — как `null`. `to_text` печатает шапку первыми пятью строками, метрики ниже.
 
-- [ ] **Step 5: Запустить тесты**
+- [x] **Step 5: Запустить тесты**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_report.py -v`
 Expected: PASS
 
-- [ ] **Step 6: Коммит**
+- [x] **Step 6: Коммит**
 
 ```bash
 git add strategylab/report tests/test_report.py
@@ -796,7 +796,7 @@ git commit -m "feat: report with mandatory provenance header"
 - Consumes: `Engine`, `ReplayDriver`, `BrokerSimulator`, `IntrabarOrder`, `build_report`
 - Produces: `Fork` (frozen) с полями `pessimistic: Report`, `optimistic: Report`; `run_fork(...) -> Fork` — два прогона одного и того же окна с двумя настройками `IntrabarOrder`; `diverges(verdict: Callable[[Report], bool]) -> bool`; `cli.py` с командой `run`
 
-- [ ] **Step 1: Написать тест на расхождение вердиктов через реальный прогон**
+- [x] **Step 1: Написать тест на расхождение вердиктов через реальный прогон**
 
 Тест обязан прогнать настоящее окно через `run_fork`, а не конструировать метрики из переданных чисел. Окно взято из спеки §13.1 — это реальные биржевые бары, где стоп и цель лежат внутри одной минуты:
 
@@ -817,30 +817,30 @@ def test_fork_diverges_when_stop_and_target_share_one_minute() -> None:
 
 Тест, который подставляет готовые `pessimistic_pnl` и `optimistic_pnl` в аргументы, запрещён: он зелёный при полностью сломанном `run_fork`.
 
-- [ ] **Step 2: Написать тест на CLI**
+- [x] **Step 2: Написать тест на CLI**
 
 `tests/test_cli.py` вызывает `cli.main(["run", ...])` на временной базе из пяти 1m-баров и проверяет, что напечатан отчёт с пятью строками шапки и вердиктом вилки.
 
-- [ ] **Step 3: Убедиться, что тесты падают**
+- [x] **Step 3: Убедиться, что тесты падают**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_fork.py tests/test_cli.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'strategylab.broker.fork'`
 
-- [ ] **Step 4: Реализовать `fork.py` и `cli.py`**
+- [x] **Step 4: Реализовать `fork.py` и `cli.py`**
 
 `run_fork` строит две стратегии и два брокера из одних и тех же `spec`, `store` и окна, прогоняет `Engine.run` дважды и заворачивает в `Fork`. `diverges` вызывает `verdict` на обоих отчётах и возвращает `True` при расхождении. `cli.py` — `argparse` с подкомандами `run` и `sync`; `run` печатает `report.to_text()` обоих вилок и строку `ВЕРДИКТ: измерима` либо `ВЕРДИКТ: НЕ ИЗМЕРИМА — вилки расходятся по вердикту`.
 
-- [ ] **Step 5: Запустить полный набор**
+- [x] **Step 5: Запустить полный набор**
 
 Run: `.venv\Scripts\python.exe -m pytest -q`
 Expected: PASS, сети не требуется; сетевые тесты — SKIPPED
 
-- [ ] **Step 6: Прогнать линтер и типы**
+- [x] **Step 6: Прогнать линтер и типы**
 
 Run: `.venv\Scripts\python.exe -m ruff check .` и `.venv\Scripts\python.exe -m mypy strategylab`
 Expected: оба без ошибок
 
-- [ ] **Step 7: Коммит**
+- [x] **Step 7: Коммит**
 
 ```bash
 git add strategylab tests
