@@ -37,7 +37,6 @@ class Engine:
         broker: BrokerSimulator,
         metrics: Metrics,
     ) -> Metrics:
-        width = feed.interval.value
         bars = list(feed.bars())
         last_index = len(bars) - 1
         for index, bar in enumerate(bars):
@@ -46,9 +45,6 @@ class Engine:
             before_entry = broker.position.entry_price
             fills = broker.apply_bar(bar)
             _record_realized(metrics, fills, before_side, before_qty, before_entry)
-            if broker.position.is_open:
-                for _minute in feed.minutes(bar.ts, bar.ts + width):
-                    pass
             state = StrategyState(
                 position=_signed_position(broker),
                 equity=metrics.equity,

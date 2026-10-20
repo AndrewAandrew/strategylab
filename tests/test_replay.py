@@ -5,25 +5,18 @@ from pathlib import Path
 
 import pytest
 
-from strategylab.broker.costs import CostModel, IntrabarOrder
-from strategylab.broker.orders import Order, Side
+from strategylab.broker.orders import Side
 from strategylab.broker.sim import BrokerSimulator
 from strategylab.core.bars import Bar, Interval
 from strategylab.core.feed import BarFeed
-from strategylab.core.metrics import Metrics
 from strategylab.data.aggregate import IncompleteBarGroup
 from strategylab.data.schema import SCHEMA, connect
 from strategylab.data.store import CandleStore
 from strategylab.drivers.replay import ReplayDriver
-from strategylab.strategy.base import Strategy, StrategyState
-from strategylab.strategy.examples import BuyHoldStrategy
 
 SYMBOL = "BTCUSDT"
 START = 1717200000  # 2024-06-01T00:00:00Z, граница часов
 HOUR = Interval.HOUR.value
-# Окно обязано делиться на интервал: иначе агрегация упадёт IncompleteBarGroup,
-# а прогон в тесте ленивой загрузки не дойдёт до баров.
-MINUTES_PER_WINDOW = 2040  # ровно 34 часа
 
 
 class CountingStore(CandleStore):
@@ -40,15 +33,6 @@ class CountingStore(CandleStore):
     def read_1m(self, symbol: str, start_ts: int, end_ts: int) -> Iterator[Bar]:
         self.calls.append((symbol, start_ts, end_ts))
         return super().read_1m(symbol, start_ts, end_ts)
-
-
-class FlatStrategy:
-    """Стратегия, которая не открывает позицию: ордеров не возвращает никогда."""
-
-    name = "flat"
-
-    def on_bar(self, bar: Bar, state: StrategyState) -> list[Order]:
-        return []
 
 
 def _store(tmp_path: Path, name: str) -> CountingStore:
@@ -80,29 +64,6 @@ def _signed_position(broker: BrokerSimulator) -> Decimal:
     if qty == 0:
         return Decimal("0")
     return qty if broker.position.side is Side.BUY else -qty
-
-
-def _simulate_run(feed: BarFeed, broker: BrokerSimulator, strategy: Strategy) -> None:
-    """То, как движок будет гонять драйвер: бар интервала применяется к брокеру, а
-    минутные бары запрашиваются только пока позиция открыта.
-
-    Метрики и реализованный pnl — работа движка (задача B), здесь состояние нужно
-    лишь стратегии-заглушке.
-    """
-    metrics = Metrics()
-    width = feed.interval.value
-    for index, bar in enumerate(feed.bars()):
-        broker.apply_bar(bar)
-        if broker.position.is_open:
-            for _minute in feed.minutes(bar.ts, bar.ts + width):
-                pass
-        state = StrategyState(
-            position=_signed_position(broker),
-            equity=metrics.equity,
-            bar_index=index,
-        )
-        for order in strategy.on_bar(bar, state):
-            broker.submit(order)
 
 
 # Кэш агрегатов: интервал считается один раз на прогон
@@ -162,7 +123,7 @@ def test_two_drivers_on_the_same_window_aggregate_independently(tmp_path: Path) 
     assert len(store.calls) == 2, "кэш в модуле прочитал бы окно один раз на двоих"
 
 
-# Лента и ленивая загрузка минутных баров
+# Лента и протокол баров
 
 
 def test_replay_driver_implements_the_feed_protocol(tmp_path: Path) -> None:
@@ -170,49 +131,6 @@ def test_replay_driver_implements_the_feed_protocol(tmp_path: Path) -> None:
     driver = _driver(store, START, START + HOUR)
 
     assert isinstance(driver, BarFeed)
-
-
-def test_minute_bars_are_read_lazily_only_for_the_requested_range(tmp_path: Path) -> None:
-    store = _store(tmp_path, "minutes.db")
-    store.write(_minutes(START, range(5 * 60)))
-    driver = _driver(store, START, START + 5 * HOUR)
-    list(driver.bars())
-
-    minutes = list(driver.minutes(START + HOUR, START + 2 * HOUR))
-
-    assert [bar.ts for bar in minutes] == [START + HOUR + 60 * i for i in range(60)]
-    assert store.calls[-1] == (SYMBOL, START + HOUR, START + 2 * HOUR)
-    assert len(store.calls) == 2, "лишних обращений к хранилищу быть не должно"
-
-
-def test_a_flat_run_reads_zero_minute_bars_for_execution(tmp_path: Path) -> None:
-    store = _store(tmp_path, "lazy_flat.db")
-    store.write(_minutes(START, range(MINUTES_PER_WINDOW)))
-    driver = _driver(store, START, START + MINUTES_PER_WINDOW * 60)
-
-    _simulate_run(driver, BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC), FlatStrategy())
-
-    assert len(store.calls) == 1, (
-        "позиция не открывалась: минутные бары для исполнения не читаются вообще"
-    )
-    assert store.calls[0] == (SYMBOL, START, START + MINUTES_PER_WINDOW * 60)
-
-
-def test_a_run_holding_a_position_reads_the_minute_bars_of_the_open_hours(tmp_path: Path) -> None:
-    store = _store(tmp_path, "lazy_open.db")
-    store.write(_minutes(START, range(MINUTES_PER_WINDOW)))
-    driver = _driver(store, START, START + MINUTES_PER_WINDOW * 60)
-
-    broker = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
-    _simulate_run(driver, broker, BuyHoldStrategy())
-
-    bars = list(driver.bars())
-    hours_held = len(bars) - 1  # позиция открывается на баре 1 и держится до конца окна
-    assert store.calls[0] == (SYMBOL, START, START + MINUTES_PER_WINDOW * 60)
-    assert len(store.calls) == 1 + hours_held
-    assert [call[1:3] for call in store.calls[1:]] == [
-        (bar.ts, bar.ts + HOUR) for bar in bars[1:]
-    ]
 
 
 # Разрыв внутри окна: IncompleteBarGroup, а не пропущенный бар

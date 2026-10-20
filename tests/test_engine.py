@@ -14,7 +14,6 @@ from strategylab.core.metrics import Metrics
 from strategylab.core.position import Position
 from strategylab.data.schema import SCHEMA, connect
 from strategylab.data.store import CandleStore
-from strategylab.drivers.replay import ReplayDriver
 from strategylab.strategy.base import StrategyState
 from strategylab.strategy.examples import BuyHoldStrategy
 
@@ -43,7 +42,7 @@ def _market(side: Side, qty: str) -> Order:
 
 
 class ListFeed:
-    """Лента из списка баров: минутные бары диапазона — те же бары."""
+    """Лента из списка баров: бары интервала стратегии — те же бары."""
 
     def __init__(self, bars: list[Bar], interval: Interval = Interval.MINUTE) -> None:
         self.interval = interval
@@ -51,9 +50,6 @@ class ListFeed:
 
     def bars(self) -> Iterator[Bar]:
         yield from self._bars
-
-    def minutes(self, start_ts: int, end_ts: int) -> Iterator[Bar]:
-        yield from (bar for bar in self._bars if start_ts <= bar.ts < end_ts)
 
 
 class ScriptedStrategy:
@@ -227,9 +223,6 @@ def test_signal_on_the_last_bar_does_not_execute() -> None:
     assert not broker.position.is_open
 
 
-# Ленивая загрузка: движок запрашивает минутные бары только пока позиция открыта
-
-
 class CountingStore(CandleStore):
     """Хранилище со счётчиком обращений к read_1m, счётчик на месте вызова."""
 
@@ -260,32 +253,3 @@ def _minutes(start_ts: int, count: int) -> list[Bar]:
         )
         for offset in range(count)
     ]
-
-
-def test_engine_reads_minutes_only_while_the_position_is_open(tmp_path: Path) -> None:
-    store = _store(tmp_path, "lazy_open.db")
-    store.write(_minutes(START, MINUTES_PER_WINDOW))
-    driver = ReplayDriver(store, SYMBOL, Interval.HOUR, START, START + MINUTES_PER_WINDOW * 60)
-    broker = BrokerSimulator(COSTS, IntrabarOrder.PESSIMISTIC)
-    metrics = Metrics()
-
-    Engine().run(driver, BuyHoldStrategy(), broker, metrics)
-
-    bars = list(driver.bars())
-    assert store.calls[0] == (SYMBOL, START, START + MINUTES_PER_WINDOW * 60)
-    assert len(store.calls) == 1 + (len(bars) - 1)
-    assert [call[1:3] for call in store.calls[1:]] == [
-        (bar.ts, bar.ts + HOUR) for bar in bars[1:]
-    ]
-
-
-def test_engine_reads_no_minutes_for_a_flat_run(tmp_path: Path) -> None:
-    store = _store(tmp_path, "lazy_flat.db")
-    store.write(_minutes(START, MINUTES_PER_WINDOW))
-    driver = ReplayDriver(store, SYMBOL, Interval.HOUR, START, START + MINUTES_PER_WINDOW * 60)
-    broker = BrokerSimulator(COSTS, IntrabarOrder.PESSIMISTIC)
-    metrics = Metrics()
-
-    Engine().run(driver, ScriptedStrategy({}), broker, metrics)
-
-    assert len(store.calls) == 1
