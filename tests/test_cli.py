@@ -96,6 +96,9 @@ def test_run_prints_both_reports_and_verdict(tmp_path: Path, capsys) -> None:
             "net_pnl: -52.64260",
             "equity: -52.64260",
             "max_drawdown: 52.64260",
+            "profit_factor: 0",
+            "win_rate: 0",
+            "sharpe: null",
         ]
         + header_lines(spec.version)
         + [
@@ -106,6 +109,9 @@ def test_run_prints_both_reports_and_verdict(tmp_path: Path, capsys) -> None:
             "net_pnl: -52.64260",
             "equity: -52.64260",
             "max_drawdown: 52.64260",
+            "profit_factor: 0",
+            "win_rate: 0",
+            "sharpe: null",
         ]
         + ["ВЕРДИКТ: измерима"]
     )
@@ -135,10 +141,10 @@ def test_run_parses_strategy_params_as_decimal_strings(tmp_path: Path, capsys) -
     assert lines[0:4] == header_lines(spec.version)
     assert lines[4] == "intrabar: PESSIMISTIC"
     assert lines[5] == "trades: 0"
-    assert lines[11:15] == header_lines(spec.version)
-    assert lines[15] == "intrabar: OPTIMISTIC"
-    assert lines[16] == "trades: 0"
-    assert lines[22] == "ВЕРДИКТ: измерима"
+    assert lines[14:18] == header_lines(spec.version)
+    assert lines[18] == "intrabar: OPTIMISTIC"
+    assert lines[19] == "trades: 0"
+    assert lines[28] == "ВЕРДИКТ: измерима"
 
 
 def _fork(pessimistic_pnl: Decimal, optimistic_pnl: Decimal) -> Fork:

@@ -88,7 +88,7 @@ def test_to_text_puts_header_in_first_five_lines() -> None:
     )
     assert isinstance(report, Report)
     lines = report.to_text().splitlines()
-    assert len(lines) == 11
+    assert len(lines) == 14
     assert lines[0] == f"spec_version: {spec.version}"
     assert lines[1] == "zones_used: fit, holdout"
     assert lines[2].startswith("costs: taker_fee=")
@@ -101,6 +101,9 @@ def test_to_text_puts_header_in_first_five_lines() -> None:
     assert lines[8] == "net_pnl: 0"
     assert lines[9] == "equity: 0"
     assert lines[10] == "max_drawdown: 0"
+    assert lines[11] == "profit_factor: null"
+    assert lines[12] == "win_rate: null"
+    assert lines[13] == "sharpe: null"
 
 
 def make_report_with_metrics(
@@ -134,6 +137,12 @@ def make_report_with_metrics(
         intrabar=IntrabarOrder.PESSIMISTIC,
         metrics=metrics,
     )
+
+
+def test_to_text_includes_the_ratio_metrics_with_the_json_values() -> None:
+    report = make_report_with_metrics(trades=2, wins=1, losses=1)
+    lines = report.to_text().splitlines()
+    assert lines[-3:] == ["profit_factor: 1", "win_rate: 0.5", "sharpe: 0"]
 
 
 def test_profit_factor_serialises_as_null() -> None:

@@ -35,7 +35,7 @@ class Report:
     metrics: Metrics
 
     def to_text(self) -> str:
-        """Текстовый отчёт: ровно пять строк шапки, метрики ниже."""
+        """Текстовый отчёт: ровно пять строк шапки, затем метрики — те же, что в JSON."""
         m = self.metrics
         return "\n".join((
             f"spec_version: {self.spec_version}",
@@ -54,6 +54,9 @@ class Report:
             f"net_pnl: {_plain(m.net_pnl)}",
             f"equity: {_plain(m.equity)}",
             f"max_drawdown: {_plain(m.max_drawdown)}",
+            f"profit_factor: {_plain_or_null(m.profit_factor())}",
+            f"win_rate: {_plain_or_null(m.win_rate())}",
+            f"sharpe: {_plain_or_null(m.sharpe())}",
         ))
 
     def to_json(self) -> str:
@@ -132,3 +135,8 @@ def _plain(value: Decimal) -> str:
 def _optional_plain(value: Decimal | None) -> str | None:
     """Decimal строкой; None остаётся None — в JSON это null, а не «Infinity»."""
     return None if value is None else _plain(value)
+
+
+def _plain_or_null(value: Decimal | None) -> str:
+    """Decimal строкой; None — маркером null, как в JSON, а не «None»."""
+    return "null" if value is None else _plain(value)
