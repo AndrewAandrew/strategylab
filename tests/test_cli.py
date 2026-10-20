@@ -76,7 +76,7 @@ def header_lines(spec_version: str) -> list[str]:
         f"spec_version: {spec_version}",
         "zones_used: fit",
         "costs: taker_fee=0.0006 maker_fee=0.0002 slippage=0.0005 leverage=1",
-        "trials: 2",
+        "trials: 1",
     ]
 
 

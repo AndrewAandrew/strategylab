@@ -14,7 +14,9 @@ from strategylab.report.report import Report, build_report
 from strategylab.spec.spec import StrategySpec
 from strategylab.strategy.base import Strategy
 
-_TRIALS = 2
+# Фиксированные параметры: поиска не было, испытание одно. Вилки
+# внутрибазового порядка — не испытания, а два прогона одного окна.
+_TRIALS = 1
 
 
 @dataclass(frozen=True, slots=True)

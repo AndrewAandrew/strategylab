@@ -158,7 +158,7 @@ def test_header_publishes_both_branches_from_spec_window() -> None:
     for report in (f.pessimistic, f.optimistic):
         assert report.spec_version == spec.version
         assert report.zones_used == (Zone.FIT,)
-        assert report.trials == 2
+        assert report.trials == 1
         assert report.costs == CostModel()
     assert f.pessimistic.intrabar is IntrabarOrder.PESSIMISTIC
     assert f.optimistic.intrabar is IntrabarOrder.OPTIMISTIC
