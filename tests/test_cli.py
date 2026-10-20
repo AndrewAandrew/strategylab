@@ -5,8 +5,6 @@ from strategylab.broker.costs import CostModel, IntrabarOrder
 from strategylab.broker.fork import Fork
 from strategylab.cli import (
     DEFAULT_RULES_REF,
-    VERDICT_MEASURABLE,
-    VERDICT_NOT_MEASURABLE,
     main,
     verdict_line,
 )
@@ -109,7 +107,7 @@ def test_run_prints_both_reports_and_verdict(tmp_path: Path, capsys) -> None:
             "equity: -52.64260",
             "max_drawdown: 52.64260",
         ]
-        + [VERDICT_MEASURABLE]
+        + ["ВЕРДИКТ: измерима"]
     )
     assert out.splitlines() == expected
 
@@ -140,7 +138,7 @@ def test_run_parses_strategy_params_as_decimal_strings(tmp_path: Path, capsys) -
     assert lines[11:15] == header_lines(spec.version)
     assert lines[15] == "intrabar: OPTIMISTIC"
     assert lines[16] == "trades: 0"
-    assert lines[22] == VERDICT_MEASURABLE
+    assert lines[22] == "ВЕРДИКТ: измерима"
 
 
 def _fork(pessimistic_pnl: Decimal, optimistic_pnl: Decimal) -> Fork:
@@ -158,8 +156,10 @@ def _fork(pessimistic_pnl: Decimal, optimistic_pnl: Decimal) -> Fork:
 
 
 def test_verdict_line_is_measurable_when_branches_agree() -> None:
-    assert verdict_line(_fork(Decimal("1"), Decimal("2"))) == VERDICT_MEASURABLE
+    assert verdict_line(_fork(Decimal("1"), Decimal("2"))) == "ВЕРДИКТ: измерима"
 
 
 def test_verdict_line_is_not_measurable_when_branches_diverge() -> None:
-    assert verdict_line(_fork(Decimal("-1"), Decimal("1"))) == VERDICT_NOT_MEASURABLE
+    assert verdict_line(_fork(Decimal("-1"), Decimal("1"))) == (
+        "ВЕРДИКТ: НЕ ИЗМЕРИМА — вилки расходятся по вердикту"
+    )
