@@ -20,6 +20,7 @@ BAR_BOTH = (1717201200, "150", "250", "90", "200")
 BAR_FORK = (1717201200, "100", "120", "80", "100")
 BAR_TARGET_EXACT = (1717201200, "100", "110", "100", "105")
 BAR_TARGET_MISS = (1717201200, "100", "109.99", "100", "105")
+BAR_ABOVE_110 = (1717201800, "112", "115", "111", "113")
 BAR_GAP_DOWN_STOP = (1717201200, "80", "85", "75", "82")
 BAR_LIQ_LONG_HIT = (1717201200, "100", "100", "40", "100")
 BAR_LIQ_LONG_BOUNDARY = (1717201200, "100", "100", "50", "100")
@@ -309,6 +310,43 @@ def test_reduce_only_is_truncated_to_open_size_at_execution() -> None:
     assert [f.reason for f in fills] == ["stop", "take_profit"]
     assert b.position.qty == Decimal("0")
     assert b.position.entry_price == Decimal("0")
+
+
+def test_reduce_only_limit_surviving_a_flip_does_not_grow_the_new_position() -> None:
+    """reduce-only заявка, пережившая переворот, снимается: уменьшать ей больше нечего.
+
+    Лонг 1 по 100, отложенный reduce-only SELL LIMIT 1 по 110. MARKET SELL 2
+    закрывает лонг и открывает шорт 1. На следующем баре лимит по 110 обязан
+    быть снят, а не исполниться: иначе шорт молча растёт 1 → 2.
+    """
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    b.submit(_order(Side.BUY, OrderKind.LIMIT, "1", "100", None))
+    b.apply_bar(_bar(BAR_LOW_99))
+    assert (b.position.side, b.position.qty) == (Side.BUY, Decimal("1"))
+    b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("1"), Decimal("110"), None, True))
+    b.submit(_order(Side.SELL, OrderKind.MARKET, "2", None, None))
+    # Бар с high 109.99: зеркальная цель 110 не задета, лимит ещё не исполнялся.
+    b.apply_bar(_bar(BAR_TARGET_MISS))
+    assert (b.position.side, b.position.qty) == (Side.SELL, Decimal("1"))
+    # Переворот произошёл внутри бара: сторона позиции больше не та, что
+    # уменьшала заявка, — она снята сразу, а не на следующем баре.
+    assert b.pending_orders == []
+    # Бар с low 111 и high 115: лимит по 110 мог бы исполниться — заявки уже нет.
+    fills = b.apply_bar(_bar(BAR_ABOVE_110))
+    assert fills == []
+    assert (b.position.side, b.position.qty) == (Side.SELL, Decimal("1"))
+
+
+def test_reduce_only_order_on_the_same_side_as_the_open_position_is_rejected() -> None:
+    """reduce-only заявка не может увеличивать позицию: та же сторона — отказ на подаче."""
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    b.submit(_order(Side.BUY, OrderKind.LIMIT, "1", "100", None))
+    b.apply_bar(_bar(BAR_LOW_99))
+    with pytest.raises(ValueError):
+        b.submit(Order(Side.BUY, OrderKind.LIMIT, Decimal("1"), Decimal("120"), None, True))
+    assert b.pending_orders == []
+    b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("1"), Decimal("110"), None, True))
+    assert len(b.pending_orders) == 1
 
 
 def test_opening_and_increasing_fills_average_entry_by_quantity() -> None:

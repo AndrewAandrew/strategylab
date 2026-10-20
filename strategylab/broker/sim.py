@@ -39,6 +39,8 @@ class BrokerSimulator:
             raise ValueError("limit order requires limit_price")
         if order.reduce_only and order.qty > self._position.qty:
             raise ValueError("reduce_only order is larger than the open position")
+        if order.reduce_only and self._position.is_open and order.side is self._position.side:
+            raise ValueError("reduce_only order is on the same side as the open position")
         if order.reduce_only and self._position.is_open:
             self._mirror_reduced(order)
         self._pending.append(order)
@@ -63,10 +65,20 @@ class BrokerSimulator:
         return fills
 
     def _cancel_reduced(self) -> None:
-        """Позиция плоская: все покоящиеся парные reduce-only заявки снимаются."""
-        if self._position.is_open:
+        """Снять покоящиеся reduce-only заявки, не противящие открытой позиции.
+
+        Позиция плоская — все: уменьшать нечего. Позиция открыта — те, чья
+        сторона совпадает со стороной позиции: после переворота они уменьшать
+        её больше не могут и исполнением стали бы увеличением.
+        """
+        if not self._position.is_open:
+            self._pending = [order for order in self._pending if not order.reduce_only]
             return
-        self._pending = [order for order in self._pending if not order.reduce_only]
+        self._pending = [
+            order
+            for order in self._pending
+            if not order.reduce_only or order.side is not self._position.side
+        ]
 
     def _apply_stops(self, bar: Bar) -> list[Fill]:
         fills: list[Fill] = []
