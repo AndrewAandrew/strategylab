@@ -129,7 +129,7 @@ def _fork() -> Fork:
 
 
 def test_fork_diverges_when_stop_and_target_share_one_minute() -> None:
-    # Бар 00:05 2024-06-01: H=67735.6, L=67650.0. Оба уровня внутри него.
+    # Бар 00:02 2024-06-01: H=67735.6, L=67650.0. Оба уровня внутри него.
     # Вход 67693.33, стоп 67652.71, цель 67733.95.
     f = run_fork(store=make_store_with_real_bars(), spec=make_spec(
         symbol="BTCUSDT", interval=Interval.MINUTE,
