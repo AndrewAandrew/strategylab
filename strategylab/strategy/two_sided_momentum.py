@@ -14,20 +14,26 @@
 расчёт не попадает. `atr_len = 14` и `risk_frac = 0.01` — константы модуля,
 свободных параметров ровно три (Global Constraint 10).
 
-Реализовано (задачи 7–9): вход в обе стороны, зеркальный стоп-брекет и
-переворот встречным сигналом. На закрытии 15m-бара B, когда окно готово,
-позиция плоская и исполнение не
-ожидается, `Close(B) > hh` или `Close(B) < ll` (при включённом фильтре уклона
-— соответственно и `Close(B) > bias` либо `Close(B) < bias`) порождает
-MARKET-заявку с размером `equity · risk_frac / (atr_mult · ATR)`; ATR морозится
-на баре сигнала. На баре исполнения входа вешается reduce_only STOP_MARKET по
+Реализовано (задачи 7–10): вход в обе стороны, зеркальный стоп-брекет,
+переворот встречным сигналом и трейлинг стопа. На закрытии 15m-бара B, когда
+окно готово, позиция плоская и исполнение не ожидается, `Close(B) > hh` или
+`Close(B) < ll` (при включённом фильтре уклона — соответственно и
+`Close(B) > bias` либо `Close(B) < bias`) порождает MARKET-заявку с размером
+`equity · risk_frac / (atr_mult · ATR)`; ATR морозится на баре сигнала. На баре
+исполнения входа вешается reduce_only STOP_MARKET по
 `close − atr_mult · ATR_замороженный` для лонга и `close + atr_mult · ATR` для
 шорта — стоп всегда с противоположной от входа стороны. Фиксированной цели в
 спеке нет — LIMIT не выдаётся никогда. Встречный пробой при открытой позиции
 переворачивает её одним MARKET объёма `abs(position) + qty` (задача 9): тот же
-брекетный путь вешает стоп новой ноги на баре исполнения. Трейлинг (10)
-надстраивается
-следующей задачей плана.
+брекетный путь вешает стоп новой ноги на баре исполнения. Трейлинг (задача 10):
+на каждом закрытом 15m-баре при открытой позиции без ожидания исполнения
+кандидат `max_high_с_входа − atr_mult · ATR_текущий` для лонга (зеркально
+`min_low_с_входа + atr_mult · ATR_текущий` для шорта) подаётся reduce_only
+STOP_MARKET на весь объём позиции, только если строго лучше текущего уровня —
+лонговый стоп не опускается, шортовый не поднимается. ATR для кандидата живой:
+заморозка «на баре-сигнале» остаётся только шириной стопа на входе. Переворот
+перезапускает трейлинг с экстремумов и уровня новой ноги (решение R2); снятие
+позиции без ожидания исполнения очищает состояние трейлинга.
 """
 
 from __future__ import annotations
@@ -106,6 +112,15 @@ class TwoSidedMomentumStrategy:
         # сигнала. Задача 8 заполнила обе стороны; задачи 9–10 их расширяют.
         self._pending_entry: Side | None = None
         self._pending_atr: Decimal | None = None
+        # Состояние трейлинга (задача 10): экстремумы high/low с бара исполнения
+        # входа и текущий уровень стопа, который знает только стратегия — движок
+        # не эхо-ит брокерский стоп. Заводятся на выдаче брекета (`_init_trailing`
+        # вызывается из `_bracket_orders`), обновляются на закрытых 15m-барах,
+        # сбрасываются при снятии позиции без ожидания исполнения. None —
+        # трейлинга нет (позиция плоская, нога ещё не исполнена).
+        self._since_high: Decimal | None = None
+        self._since_low: Decimal | None = None
+        self._stop_level: Decimal | None = None
 
     @classmethod
     def from_params(cls, params: Mapping[str, Decimal]) -> TwoSidedMomentumStrategy:
@@ -131,14 +146,26 @@ class TwoSidedMomentumStrategy:
         уже исполнен: если позиция открыта в сторону ожидания (лонг при знаке
         позиции > 0, шорт при < 0) и вход ожидается, на этом баре вешается
         стоп-брекет и ожидающее состояние снимается.
+
+        Трейлинг (задача 10) живёт на закрытых 15m-барах: `_trailing_orders`
+        вызывается после поиска сигнала — на баре переворота pending уже
+        выставлен, и трейлинг прежней ноги молчит (жизненные циклы заявок
+        исключительны). Плоское состояние без ожидания снимает экстремумы и
+        уровень прежней ноги до остальной логики: мёртвого состояния трейлинга
+        не остаётся, чужими экстремумами `_trailing_orders` питаться не может.
         """
         orders: list[Order] = []
+        if state.position == 0 and self._pending_entry is None:
+            self._since_high = None
+            self._since_low = None
+            self._stop_level = None
         bar15 = self._m15.update(bar)
         if bar15 is not None:
             self._update_15m(bar15)
             entry = self._entry_order(bar15, state)
             if entry is not None:
                 orders.append(entry)
+            orders.extend(self._trailing_orders(bar15, state))
         pending = self._pending_entry
         filled = (pending is Side.BUY and state.position > 0) or (
             pending is Side.SELL and state.position < 0
@@ -231,16 +258,87 @@ class TwoSidedMomentumStrategy:
         position = state.position
         if position > 0:
             stop = entry - distance
+            self._init_trailing(entry, stop)
             return [Order(Side.SELL, OrderKind.STOP_MARKET, position, None, stop, True)]
         elif position < 0:
             # Шорт: зеркало — стоп над входом, объём снят по модулю позиции.
             stop = entry + distance
+            self._init_trailing(entry, stop)
             return [Order(Side.BUY, OrderKind.STOP_MARKET, -position, None, stop, True)]
         else:
             # Ветка недостижима из on_bar: брекет вешается только на исполненном
             # входе, а исполненный знак позиции ненулевой по построению.
             # Плоскому вызову всё равно соответствует явное «ничего»:
             # implicit else прятал бы рассогласование pending с движком (м16).
+            return []
+
+    def _init_trailing(self, entry_price: Decimal, stop: Decimal) -> None:
+        """Завести состояние трейлинга; момент заводки — выдача стоп-брекета.
+
+        Выбранный момент инициализации: экстремумы стартуют с оценки входа
+        (close бара исполнения — той же цены, от которой отмерен стоп), а
+        уровень — с выданного стопа. Движок не отдаёт стратегии ни цену
+        исполнения, ни брокерский стоп: единственный бар, где стратегия
+        достоверно знает и вход, и стоп, — выдача брекета. Группа входа
+        закроется позже, её фактические high/low доедут в экстремумы на
+        закрытии. На перевороте этот же вызов из брекетного пути
+        перезапускает трейлинг с экстремумов и уровня НОВОЙ ноги — прежняя
+        нога не протаскивает свои максимумы и минимумы через флип
+        (решение R2).
+        """
+        self._since_high = entry_price
+        self._since_low = entry_price
+        self._stop_level = stop
+
+    def _trailing_orders(self, bar15: Bar, state: StrategyState) -> list[Order]:
+        """Трейлинг ATR-стопа на закрытом 15m-баре при открытой позиции.
+
+        Спека §Правила: LONG stop = max(стоп, max High с входа − atr_mult·ATR),
+        только вверх; для шорта зеркально от min Low, только вниз. Экстремумы
+        обновляются баром B ДО вычисления кандидата (high бара входит в «max с
+        входа»), ATR берётся ТЕКУЩИЙ `_atr_value`, не замороженный: заморозка
+        «на баре-сигнале» остаётся шириной стопа на входе, трейлинг по спеке
+        живёт на живом значении. Заявка — reduce_only STOP_MARKET на весь
+        объём позиции, и только когда кандидат СТРОГО лучше уровня: на уровне
+        или хуже — пустой список, лонговый стоп не опускается, шортовый не
+        поднимается (без строгого «лучше» тот же уровень перезаказывался бы
+        каждый бар, и трейл превращался бы в дрейф стопа). Пока вход/брекет ожидается, трейлинг
+        молчит: `_pending_entry` исключает трейл из жизненного цикла заявки.
+        Без состояния (позиция исполнена, но брекет ещё не выдан — середина
+        бара исполнения; либо позиция снята — поля сброшены) и до границы
+        warmup (`_atr_value is None`) — тоже пустой список.
+        """
+        if state.position == 0 or self._pending_entry is not None:
+            return []
+        since_high = self._since_high
+        since_low = self._since_low
+        level = self._stop_level
+        atr = self._atr_value
+        if since_high is None or since_low is None or level is None or atr is None:
+            return []
+        position = state.position
+        if position > 0:
+            self._since_high = since_high = max(since_high, bar15.high)
+            candidate = since_high - self._atr_mult * atr
+            if candidate > level:
+                self._stop_level = candidate
+                return [
+                    Order(Side.SELL, OrderKind.STOP_MARKET, position, None, candidate, True)
+                ]
+            return []
+        elif position < 0:
+            self._since_low = since_low = min(since_low, bar15.low)
+            candidate = since_low + self._atr_mult * atr
+            if candidate < level:
+                self._stop_level = candidate
+                return [
+                    Order(Side.BUY, OrderKind.STOP_MARKET, -position, None, candidate, True)
+                ]
+            return []
+        else:
+            # Как и в _bracket_orders (м16): знак нуля сюда недостижим из
+            # on_bar — первый страж уже отсёк плоскую позицию, — но ветка
+            # обязана быть явной, а не implicit else.
             return []
 
     def _update_15m(self, bar15: Bar) -> None:

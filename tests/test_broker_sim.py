@@ -757,3 +757,45 @@ def test_limit_mirror_is_not_deduplicated() -> None:
     b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("0.4"), Decimal("105"), None, True))
     b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("0.6"), Decimal("110"), None, True))
     assert len([o for o in b.pending_orders if o.kind is OrderKind.LIMIT]) == 2
+
+
+# Трейлинг ATR-стопа после входа (задача 10): гэп и лестница перезаказов
+
+
+def test_short_trailing_stop_fills_on_gap_up() -> None:
+    """Гэп выше resting-СТОПа шорта: PESSIMISTIC выбивает стоп по open бара.
+
+    Шорт открыт MARKET SELL (исполнение по close первого бара), поверх него
+    отдыхает reduce-only BUY STOP_MARKET на 96 — уровень трейла. Второй бар
+    открывается на 99, то есть гэпом ВЫШЕ стопа, а high 101 доходит до уровня
+    лишь из гэпа: стоп обязан исполниться по open, а не по 96.
+    """
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    b.submit(Order(Side.SELL, OrderKind.MARKET, Decimal("1"), None, None, False))
+    b.apply_bar(_bar((1, "99", "101", "94", "100")))
+    assert (b.position.side, b.position.qty) == (Side.SELL, Decimal("1"))
+    b.submit(Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("96"), True))
+    fills = b.apply_bar(_bar((2, "99", "101", "94", "100")))
+    assert fills[0].reason == "stop"
+    assert fills[0].price > Decimal("96")
+
+
+def test_ten_trailing_stop_resubmits_leave_one_resting_order() -> None:
+    """Лестница из десяти перезаказов трейла: в очереди остаётся один стоп.
+
+    Dedup Task 5 под нагрузкой: каждый следующий reduce-only STOP_MARKET той
+    же стороны вытесняет предыдущего предшественника, накопления нет.
+    """
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    b.submit(Order(Side.SELL, OrderKind.MARKET, Decimal("1"), None, None, False))
+    b.apply_bar(_bar((1, "99", "101", "94", "100")))
+    for level in range(10):
+        b.submit(
+            Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal(level), True)
+        )
+    stops = [o for o in b.pending_orders if o.kind is OrderKind.STOP_MARKET]
+    assert len(b.pending_orders) == 1
+    assert stops == [
+        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("9"), True)
+    ]
+    assert b.position.stop_price == Decimal("9")

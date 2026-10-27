@@ -513,3 +513,217 @@ def test_bracket_flat_call_emits_nothing() -> None:
         donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
     )
     assert s._bracket_orders(_bars(1)[0], _flat_state(), Decimal("0.5")) == []
+
+
+# Трейлинг ATR-стопа после входа (задача 10)
+
+
+def _group_orders(
+    strategy: TwoSidedMomentumStrategy,
+    first: int,
+    members: list[tuple[Decimal, Decimal, Decimal, Decimal]],
+    position: Decimal,
+) -> list[Order]:
+    """Прогон 1m-баров группы (o, h, l, c), идущих подряд с индекса `first`.
+
+    Возвращает все ордера группы одним списком: позиция в состоянии одна и та
+    же на всю группу — движок в этих тестах смонирован externally.
+    """
+    emitted: list[Order] = []
+    state = StrategyState(position=position, equity=EQUITY, bar_index=first)
+    for minute, (open_, high, low, close) in enumerate(members):
+        emitted.append(
+            strategy.on_bar(
+                Bar(
+                    ts=START + 60 * (first + minute),
+                    open=open_,
+                    high=high,
+                    low=low,
+                    close=close,
+                    volume=ONE,
+                ),
+                state,
+            )
+        )
+    return [order for group in emitted for order in group]
+
+
+def _trail_long_to_high_105(s: TwoSidedMomentumStrategy) -> list[Order]:
+    """Реальный вход лонга и лестница трейла до закрытого 15m-бара с high 105.
+
+    Вход: `_bars_then_breakout()` (сигнал №18, замороженный ATR 0.5). Исполнение
+    — нулевая минута группы №19 плоским 1m-баром close=100: брекет SELL на 99
+    там же заводит состояние трейлинга (уровень 99, экстремумы 100/100). Далее
+    группа №19 закрывается баром H=100.5/L=100/C=100.5 (TR ровно 0.5 — ATR
+    Уайлдера остаётся ровно 0.5), а восемь лестничных групп №20–№28 поднимают
+    high на 0.5 за бар до 105: каждый шаг — истинный диапазон 0.5, ATR 0.5 без
+    изменения. Возвращает ордера финальной лестницы (bar high 105).
+    """
+    bars = _bars_then_breakout()
+    _run_strategy(s, bars)
+    flat = FLAT_PRICE
+    h105 = Decimal("105")
+    step = Decimal("0.5")
+    # Нулевая минута группы №19: close 100 → брекет 99 и инициализация трейла.
+    assert _group_orders(s, len(bars), [(flat, flat, flat, flat)], Decimal("100")) == [
+        Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("99"), True)
+    ]
+    # Закрытие группы №19: H=100.5, L=100, C=100.5 — TR 0.5, трейл на 99.5.
+    assert _group_orders(
+        s,
+        len(bars) + 1,
+        [(Decimal("100"), Decimal("100.5"), Decimal("100"), Decimal("100.5"))] * 14,
+        Decimal("100"),
+    ) == [Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("99.5"), True)]
+    # Лестница №20–№28: close каждого бара = high = prev close + 0.5 (TR 0.5);
+    # встречных сигналов нет (шаг вверх — тот же блок one-order-per-fill уже
+    # закреплял в тесте блокировки лонга при лонге).
+    orders: list[Order] = []
+    index = len(bars) + 15
+    price = Decimal("100.5")
+    for _ in range(9):
+        top = price + step
+        orders = _group_orders(
+            s,
+            index,
+            [(price, top, price, top)] * 15,
+            Decimal("100"),
+        )
+        price = top
+        index += 15
+    # price == 105: финальный бар — тот самый high 105 при ATR 0.5.
+    assert price == h105
+    return orders
+
+
+def test_long_stop_trails_up_only() -> None:
+    s = TwoSidedMomentumStrategy(
+        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
+    )
+    orders = _trail_long_to_high_105(s)
+    # Закрытый 15m-бар с high 105 при ATR ровно 0.5: candidate 104 = 105 − 2×0.5
+    # (живой ATR, не замороженный) лучше уровня 103.5 → единственный ордер.
+    assert orders == [
+        Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("104"), True)
+    ]
+    # Следующий бар не лучше: high остаётся 105 (экстремум не уменьшается),
+    # TR 0.5 → ATR 0.5 → candidate ровно 104 = уровень: строгое «лучше» не
+    # выполнено, повторной заявки нет — стоп не переставляется на месте.
+    flat_again = _group_orders(
+        s,
+        270 + 15 * 10,
+        [(Decimal("104.5"), Decimal("105"), Decimal("104.5"), Decimal("105"))] * 15,
+        Decimal("100"),
+    )
+    assert flat_again == []
+
+
+def test_short_stop_trails_down_only() -> None:
+    # Зеркало: вход шорта, брекет 101, лестница вниз до low 95, candidate
+    # 96 = 95 + 2×0.5 (живой ATR 0.5) — ровно pinned-уровень.
+    s = TwoSidedMomentumStrategy(
+        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
+    )
+    bars = _bars_then_breakdown()
+    _run_strategy(s, bars)
+    flat = FLAT_PRICE
+    step = Decimal("0.5")
+    assert _group_orders(s, len(bars), [(flat, flat, flat, flat)], Decimal("-100")) == [
+        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("101"), True)
+    ]
+    assert _group_orders(
+        s,
+        len(bars) + 1,
+        [(Decimal("99.5"), Decimal("100"), Decimal("99.5"), Decimal("99.5"))] * 14,
+        Decimal("-100"),
+    ) == [Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("100.5"), True)]
+    orders: list[Order] = []
+    index = len(bars) + 15
+    price = Decimal("99.5")
+    for _ in range(9):
+        bottom = price - step
+        orders = _group_orders(s, index, [(price, price, bottom, bottom)] * 15, Decimal("-100"))
+        price = bottom
+        index += 15
+    assert price == Decimal("95")  # финальный бар: low 95 при ATR 0.5
+    assert orders == [
+        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("96"), True)
+    ]
+    # Зеркальный «не лучше»: low остаётся 95, candidate ровно 96 = уровень —
+    # заявка не повторяется.
+    again = _group_orders(
+        s,
+        270 + 15 * 10,
+        [(Decimal("95"), Decimal("95.5"), Decimal("95"), Decimal("95.5"))] * 15,
+        Decimal("-100"),
+    )
+    assert again == []
+
+
+def test_flatten_clears_trailing_state() -> None:
+    # Плоское состояние без ожидания снимает экстремумы и уровень: мёртвых
+    # полей нет, новая нога не может унаследовать старые значения.
+    s = TwoSidedMomentumStrategy(
+        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
+    )
+    _trail_long_to_high_105(s)
+    assert s._stop_level is not None and s._since_high is not None
+    for bar in _bars(15, first=270 + 15 * 10):  # группа №29 при позиции 0
+        s.on_bar(bar, _flat_state())
+    assert s._stop_level is None and s._since_high is None and s._since_low is None
+
+
+def test_reversal_reinitialises_trailing_on_new_leg() -> None:
+    # R2: переворот перезапускает трейлинг с экстремумов и уровня НОВОЙ ноги.
+    # Старый лонг оттрейлен до high 105 (уровень стопа 104); переворот — баром
+    # с истинным диапазоном 7.5 (ATR после него ровно 1.0), qty = 100 + 50;
+    # исполнение — flat-баром close 97.5: брекет BUY на 99.5 = 97.5 + 2×1.0
+    # и сброс экстремумов на 97.5. Первый закрытый бар новой ноги: L=97.5,
+    # H=98.5, C=98 (TR 1.0 — ATR остаётся ровно 1.0) → candidate 97.5 + 2×1.0
+    # = 99.5 = новый уровень: строго «лучше» нет → [] — со старым уровнем 104
+    # стратегия ошибочно переставила бы стоп новой ноги на 99.5.
+    s = TwoSidedMomentumStrategy(
+        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
+    )
+    _trail_long_to_high_105(s)
+    assert s._stop_level == Decimal("104") and s._since_high == Decimal("105")
+    # Бар переворота (группа №29): close 97.5 < ll=104, TR=7.5 → ATR ровно 1.0.
+    reversed_bar = _group_orders(
+        s,
+        270 + 15 * 10,
+        [(Decimal("97.5"), Decimal("104"), Decimal("97.5"), Decimal("97.5"))] * 15,
+        Decimal("100"),
+    )
+    assert reversed_bar == [Order(Side.SELL, OrderKind.MARKET, Decimal("150"), None, None, False)]
+    # Исполнение переворота: +100 − 150 = −50, брекет новой ноги на 99.5.
+    fill = _group_orders(
+        s,
+        270 + 15 * 11,
+        [(Decimal("97.5"), Decimal("97.5"), Decimal("97.5"), Decimal("97.5"))],
+        Decimal("-50"),
+    )
+    assert fill == [
+        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("50"), None, Decimal("99.5"), True)
+    ]
+    assert s._since_high == Decimal("97.5") and s._stop_level == Decimal("99.5")
+    # Закрытие группы №30 (14 минут): H=98.5, L=97.5, C=98 → TR 1.0, ATR 1.0;
+    # candidate 99.5 = уровень — повторной заявки нет (со старым уровнем 104
+    # была бы — это и есть отравление экстремумами прежней ноги).
+    hold = _group_orders(
+        s,
+        270 + 15 * 11 + 1,
+        [(Decimal("97.5"), Decimal("98.5"), Decimal("97.5"), Decimal("98"))] * 14,
+        Decimal("-50"),
+    )
+    assert hold == []
+    # Новый экстремум шортовой ноги (low 97) даёт candidate 99 < 99.5: заявка
+    # идёт от экстремумов новой ноги, старый high 105 в расчёт не попал.
+    trail = _group_orders(
+        s,
+        270 + 15 * 12,
+        [(Decimal("97.5"), Decimal("98"), Decimal("97"), Decimal("97.5"))] * 15,
+        Decimal("-50"),
+    )
+    assert trail == [
+        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("50"), None, Decimal("99"), True)
+    ]
