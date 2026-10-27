@@ -233,3 +233,13 @@ def test_window_close_is_bucketed_by_position_side() -> None:
     metrics = _run({0: [_market(Side.SELL, "1")]}, None)
     assert metrics.short.trades == 1 and metrics.long.trades == 0
     assert metrics.short.net_pnl == metrics.net_pnl
+
+
+def test_reversal_bucket_split_and_sum() -> None:
+    # бар 0: лонг 1; бар 2: SELL 2 = закрыть лонг и открыть шорт; дальше шорт живёт
+    # до конца ленты, и окно сводит движок.
+    metrics = _run({0: [_market(Side.BUY, "1")], 2: [_market(Side.SELL, "2")]}, TradeLog())
+    assert metrics.long.trades == 1  # закрытая часть переворота
+    assert metrics.short.trades == 1  # шорт, закрытый сведением окна
+    assert metrics.trades == 2
+    assert metrics.long.net_pnl + metrics.short.net_pnl == metrics.net_pnl

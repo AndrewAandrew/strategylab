@@ -14,17 +14,20 @@
 расчёт не попадает. `atr_len = 14` и `risk_frac = 0.01` — константы модуля,
 свободных параметров ровно три (Global Constraint 10).
 
-Реализовано (задача 8): вход в обе стороны и зеркальный стоп-брекет. На
-закрытии 15m-бара B, когда окно готово, позиция плоская и исполнение не
+Реализовано (задачи 7–9): вход в обе стороны, зеркальный стоп-брекет и
+переворот встречным сигналом. На закрытии 15m-бара B, когда окно готово,
+позиция плоская и исполнение не
 ожидается, `Close(B) > hh` или `Close(B) < ll` (при включённом фильтре уклона
 — соответственно и `Close(B) > bias` либо `Close(B) < bias`) порождает
 MARKET-заявку с размером `equity · risk_frac / (atr_mult · ATR)`; ATR морозится
 на баре сигнала. На баре исполнения входа вешается reduce_only STOP_MARKET по
 `close − atr_mult · ATR_замороженный` для лонга и `close + atr_mult · ATR` для
 шорта — стоп всегда с противоположной от входа стороны. Фиксированной цели в
-спеке нет — LIMIT не выдаётся никогда. Реверс (задача 9) и трейлинг (10)
-надстраиваются
-следующими задачами плана.
+спеке нет — LIMIT не выдаётся никогда. Встречный пробой при открытой позиции
+переворачивает её одним MARKET объёма `abs(position) + qty` (задача 9): тот же
+брекетный путь вешает стоп новой ноги на баре исполнения. Трейлинг (10)
+надстраивается
+следующей задачей плана.
 """
 
 from __future__ import annotations
@@ -122,9 +125,10 @@ class TwoSidedMomentumStrategy:
         """Один 1m-бар: обновить агрегаты 15m, искать вход, вешать брекет.
 
         Порядок как в FlatKeltnerStrategy.on_bar: сначала закрытие 15m-бара и
-        поиск сигнала входа (ограничен `state.position == 0` и отсутствием
-        ожидающего исполнения), затем — проверка, что выданный MARKET уже
-        исполнен: если позиция открыта в сторону ожидания (лонг при знаке
+        поиск сигнала входа (свежий вход — только при плоской позиции;
+        встречный сигнал при открытой — переворот одним MARKET, задача 9; при
+        ожидающем исполнении — молчание), затем — проверка, что выданный MARKET
+        уже исполнен: если позиция открыта в сторону ожидания (лонг при знаке
         позиции > 0, шорт при < 0) и вход ожидается, на этом баре вешается
         стоп-брекет и ожидающее состояние снимается.
         """
@@ -159,20 +163,23 @@ class TwoSidedMomentumStrategy:
         (решение R9). Фильтр уклона добавляет условие по сторону сигнала —
         Close(B) > bias для лонга и зеркальное Close(B) < bias для шорта, —
         только когда включён (`self._bias is not None`), и тогда уже его `None`
-        честно означает «bias ещё не посчитан».
+        честно означает «bias ещё не посчитан». К перевороту встречным сигналом
+        (задача 9) фильтр уклона применяется ровно так же, как к свежему входу.
 
         Размер `qty = equity · _RISK_FRAC / (atr_mult · atr)`: риск на сделку
         — _RISK_FRAC капитала, дистанция до стопа — atr_mult · ATR, ATR
-        замораживается на сигнальном баре в `_pending_atr`. Вход запрещён,
-        пока позиция не плоская или прошлое исполнение ещё ожидается:
-        не более одного сигнала на позицию.
+        замораживается на сигнальном баре в `_pending_atr`. Пока прошлое
+        исполнение ещё ожидается, сигнал молчит: не более одного ордера на
+        исполнение. При открытой позиции встречный сигнал переворачивает её
+        ОДНИМ ордером `abs(position) + qty` (задача 9), однонаправленный —
+        блокируется.
         """
         hh = self._hh
         ll = self._ll
         atr = self._atr_value
         if hh is None or ll is None or atr is None or atr <= 0:
             return None
-        if state.position != 0 or self._pending_entry is not None:
+        if self._pending_entry is not None:
             return None
         if bar15.close > hh:
             side: Side = Side.BUY
@@ -191,6 +198,19 @@ class TwoSidedMomentumStrategy:
         if state.equity <= 0:
             return None
         qty = state.equity * _RISK_FRAC / (self._atr_mult * atr)
+        position = state.position
+        if position != 0:
+            # Переворот (задача 9): встречный сигнал снимает старую ногу и
+            # открывает новую одним MARKET — `abs(position) + qty`. Сигнал
+            # того же направления, что позиция, по-прежнему заблокирован:
+            # не наращиваем. Брекет новой ноги повесит на баре исполнения
+            # существующий путь — новой коды для этого здесь нет.
+            reversing = (position > 0 and side is Side.SELL) or (
+                position < 0 and side is Side.BUY
+            )
+            if not reversing:
+                return None
+            qty += abs(position)
         self._pending_entry = side
         self._pending_atr = atr
         return Order(side, OrderKind.MARKET, qty, None, None, False)
@@ -212,8 +232,16 @@ class TwoSidedMomentumStrategy:
         if position > 0:
             stop = entry - distance
             return [Order(Side.SELL, OrderKind.STOP_MARKET, position, None, stop, True)]
-        stop = entry + distance
-        return [Order(Side.BUY, OrderKind.STOP_MARKET, -position, None, stop, True)]
+        elif position < 0:
+            # Шорт: зеркало — стоп над входом, объём снят по модулю позиции.
+            stop = entry + distance
+            return [Order(Side.BUY, OrderKind.STOP_MARKET, -position, None, stop, True)]
+        else:
+            # Ветка недостижима из on_bar: брекет вешается только на исполненном
+            # входе, а исполненный знак позиции ненулевой по построению.
+            # Плоскому вызову всё равно соответствует явное «ничего»:
+            # implicit else прятал бы рассогласование pending с движком (м16).
+            return []
 
     def _update_15m(self, bar15: Bar) -> None:
         """Закрытый 15m-бар B: ATR и bias включая B, Дончиан по окну без B.
