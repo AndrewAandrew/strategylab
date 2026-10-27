@@ -37,6 +37,11 @@ def test_build_returns_buy_hold() -> None:
     assert s.name == "buy_hold"
 
 
+def test_build_returns_two_sided_momentum() -> None:
+    s = build("two_sided_momentum", {})
+    assert s.name == "two_sided_momentum"
+
+
 def test_build_unknown_name_raises() -> None:
     with pytest.raises(UnknownStrategy):
         build("нет_такой", {})

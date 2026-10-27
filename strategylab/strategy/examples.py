@@ -10,6 +10,7 @@ from strategylab.strategy.base import Strategy, StrategyState
 from strategylab.strategy.flat_keltner import FlatKeltnerStrategy
 from strategylab.strategy.sweep_liquidity import SweepLiquidityStrategy
 from strategylab.strategy.trend_pullback import TrendPullbackStrategy
+from strategylab.strategy.two_sided_momentum import TwoSidedMomentumStrategy
 
 
 class UnknownStrategy(Exception):
@@ -80,6 +81,7 @@ STRATEGY_CLASSES: dict[str, type[Strategy]] = {
     "flat_keltner": FlatKeltnerStrategy,
     "trend_pullback": TrendPullbackStrategy,
     "sweep_liquidity": SweepLiquidityStrategy,
+    "two_sided_momentum": TwoSidedMomentumStrategy,
 }
 
 
@@ -95,6 +97,8 @@ def build(name: str, params: Mapping[str, Decimal]) -> Strategy:
         return TrendPullbackStrategy.from_params(params)
     if name == "sweep_liquidity":
         return SweepLiquidityStrategy.from_params(params)
+    if name == "two_sided_momentum":
+        return TwoSidedMomentumStrategy.from_params(params)
     raise UnknownStrategy(name)
 
 

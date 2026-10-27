@@ -77,6 +77,7 @@ RULES_REF = "sweep"
 TOUCH_REGISTRY = Path(__file__).resolve().parent.parent / "data" / "touch_registry.json"
 
 # Колонки метрик в CSV: тот же набор, что в отчёте прогона.
+# Шесть боковых колонок идут после sharpe в этом порядке: их читает gates.py.
 METRIC_COLUMNS = (
     "trades",
     "wins",
@@ -84,6 +85,12 @@ METRIC_COLUMNS = (
     "max_drawdown",
     "profit_factor",
     "sharpe",
+    "long_trades",
+    "long_net_pnl",
+    "long_profit_factor",
+    "short_trades",
+    "short_net_pnl",
+    "short_profit_factor",
 )
 
 # Зоны, за касания которых отвечает реестр: fit — подбор, он свободен.
@@ -324,6 +331,14 @@ def _row(report: Report, combination: Mapping[str, Decimal], names: Sequence[str
         _plain(metrics.max_drawdown),
         _plain_or_null(metrics.profit_factor()),
         _plain_or_null(metrics.sharpe()),
+        # Стороны — сериализацией из report.py: trades/net_pnl через _plain,
+        # profit_factor None — маркером null.
+        str(metrics.long.trades),
+        _plain(metrics.long.net_pnl),
+        _plain_or_null(metrics.long.profit_factor()),
+        str(metrics.short.trades),
+        _plain(metrics.short.net_pnl),
+        _plain_or_null(metrics.short.profit_factor()),
     ]
     return ",".join(cells)
 

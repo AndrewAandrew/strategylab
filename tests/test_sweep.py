@@ -12,10 +12,17 @@ from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
 
-from strategylab.core.bars import Bar
+from strategylab.broker.costs import CostModel, IntrabarOrder
+from strategylab.broker.orders import Side
+from strategylab.core.bars import Bar, Interval
+from strategylab.core.metrics import Metrics
 from strategylab.data.schema import SCHEMA, connect
 from strategylab.data.store import CandleStore
 from strategylab.data.zones import Zone, assign_zone
+from strategylab.report.report import Report, build_report
+from strategylab.spec.spec import StrategySpec
+from strategylab.strategy.two_sided_momentum import TwoSidedMomentumStrategy
+from tests.test_metrics import make_fill
 
 SYMBOL = "BTCUSDT"
 START_TS = 1717200000  # 2024-06-01T00:00:00Z
@@ -30,7 +37,8 @@ _SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "sweep.py"
 
 CSV_HEADER = (
     "spec_version,adx_len,ema_len,atr_len_regime,atr_len_exit,exit_mult,"
-    "trades,wins,net_pnl,max_drawdown,profit_factor,sharpe"
+    "trades,wins,net_pnl,max_drawdown,profit_factor,sharpe,"
+    "long_trades,long_net_pnl,long_profit_factor,short_trades,short_net_pnl,short_profit_factor"
 )
 
 EXIT_MULT_COLUMN = 5
@@ -140,7 +148,7 @@ def test_sweep_prints_one_row_per_combination(tmp_path: Path, capsys) -> None:
     rows = _rows(out)
     assert len(rows) == 2
     assert [row[EXIT_MULT_COLUMN] for row in rows] == ["1.5", "2"]
-    assert all(len(row) == 12 for row in rows)
+    assert all(len(row) == 18 for row in rows)
     # Сделка в каждой комбинации одна: сигнал на проколке, выход — по закрытию окна.
     assert [row[6] for row in rows] == ["1", "1"]
     # Размер разный (ширина стопа разная), значит и P&L разный.
@@ -211,3 +219,47 @@ def test_touch_registry_silent_on_fit_only_window(tmp_path: Path, monkeypatch, c
     out = capsys.readouterr().out
     assert "touches: holdout=0, live=0" in out
     assert not registry.exists()
+
+
+# Реестр и стороны в CSV: дефолты из конструктора и шесть колонок SideMetrics
+
+
+def test_sweep_defaults_take_constructor_values() -> None:
+    """Гейт «≤3 свободных параметра»: ровно donch_len/atr_mult/bias_len из конструктора."""
+    sweep = _load_sweep()
+    assert sweep._defaults(TwoSidedMomentumStrategy) == {
+        "donch_len": Decimal("48"),
+        "atr_mult": Decimal("1.5"),
+        "bias_len": Decimal("48"),
+    }
+
+
+def report_with(metrics: Metrics) -> Report:
+    """Отчёт с заданными метриками: тот же idiom build_report, что в test_report.py."""
+    return build_report(
+        spec=StrategySpec(
+            name="two_sided_momentum",
+            symbol=SYMBOL,
+            interval=Interval.MINUTE,
+            start_ts=START_TS,
+            end_ts=END_TS,
+            params={"donch_len": Decimal("48")},
+            rules_ref="strategydocs/spec_01_two_sided_momentum_20261022.md",
+        ),
+        zones_used=(Zone.FIT,),
+        costs=CostModel(),
+        trials=1,
+        intrabar=IntrabarOrder.PESSIMISTIC,
+        metrics=metrics,
+    )
+
+
+def test_sweep_row_includes_side_columns() -> None:
+    sweep = _load_sweep()
+    metrics = Metrics(equity=Decimal("10000"))
+    fill = make_fill()
+    for pnl in (Decimal("-20"), Decimal("-20")):
+        metrics.record(fill, pnl, Side.BUY)
+    metrics.record(fill, Decimal("100"), Side.SELL)
+    row = sweep._row(report_with(metrics), {"donch_len": Decimal("48")}, ["donch_len"])
+    assert row.split(",")[-6:] == ["2", "-40", "0", "1", "100", "null"]
