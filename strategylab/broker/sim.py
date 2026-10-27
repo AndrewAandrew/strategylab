@@ -46,11 +46,18 @@ class BrokerSimulator:
         self._pending.append(order)
 
     def _mirror_reduced(self, order: Order) -> None:
-        """reduce-only заявка зеркалит свой уровень в позицию."""
+        """reduce-only заявка зеркалит свой уровень в позицию.
+
+        STOP_MARKET зеркалит только уровень: стоп исполняется на весь
+        остаток позиции, размер зеркалу не нужен. LIMIT зеркалит уровень
+        и размер: тейк-профит на уменьшенной заявке исполняется её объёмом,
+        а не всей позицией — так работает частичная фиксация прибыли.
+        """
         if order.kind is OrderKind.STOP_MARKET and order.stop_price is not None:
             self._position.stop_price = order.stop_price
         elif order.kind is OrderKind.LIMIT and order.limit_price is not None:
             self._position.take_profit = order.limit_price
+            self._position.take_profit_qty = order.qty
 
     def apply_bar(self, bar: Bar) -> list[Fill]:
         fills = self._apply_stops(bar)
@@ -100,7 +107,14 @@ class BrokerSimulator:
         return fills
 
     def _apply_exits(self, bar: Bar) -> list[Fill]:
-        """Стоп-лосс и тейк-профит открытой позиции по high/low с учётом IntrabarOrder."""
+        """Стоп-лосс и тейк-профит открытой позиции по high/low с учётом IntrabarOrder.
+
+        Цель с уменьшенным зеркалом (`take_profit_qty` меньше размера позиции)
+        исполняется только своим объёмом: частичная фиксация прибыли оставляет
+        остаток позиции без цели до новой постановки. Замена уровня цели после
+        частичного выхода — повторной reduce_only-постановкой, как и замена
+        стопа.
+        """
         position = self._position
         if not position.is_open:
             return []
@@ -116,17 +130,50 @@ class BrokerSimulator:
         if take_target:
             assert position.take_profit is not None
             price = position.take_profit
-            fee_rate = self.costs.maker_fee
-            reason = "take_profit"
-        else:
-            assert position.stop_price is not None
-            price = self._slipped(self._stop_base(bar, exit_side, position.stop_price), exit_side)
-            fee_rate = self.costs.taker_fee
-            reason = "stop"
-        fill = self._make_fill(bar, exit_side, price, fee_rate, reason, position.qty)
+            qty = self._target_qty(position)
+            fill = self._make_fill(bar, exit_side, price, self.costs.maker_fee, "take_profit", qty)
+            self._position.apply_fill(fill)
+            if self._position.is_open:
+                # Частичный выход по цели: зеркало снято — исполненная часть
+                # уровня отработана, дышать этому уровню больше нечем. У
+                # остатка цель появится только новой постановкой.
+                self._position.take_profit = None
+                self._position.take_profit_qty = None
+                self._drop_resting_target(price, exit_side)
+            self._cancel_reduced()
+            return [fill]
+        assert position.stop_price is not None
+        price = self.slipped(self._stop_base(bar, exit_side, position.stop_price), exit_side)
+        fill = self._make_fill(bar, exit_side, price, self.costs.taker_fee, "stop", position.qty)
         self._position.apply_fill(fill)
         self._cancel_reduced()
         return [fill]
+
+    @staticmethod
+    def _target_qty(position: Position) -> Decimal:
+        """Объём исполнения цели: размер зеркала, но не больше позиции."""
+        if position.take_profit_qty is None:
+            return position.qty
+        return min(position.qty, position.take_profit_qty)
+
+    def _drop_resting_target(self, price: Decimal, side: Side) -> None:
+        """Снимает отдыхающий reduce-only лимит с только что исполненного уровня.
+
+        Цель исполнилась зеркалом позиции, а отдыхающий лимит того же уровня
+        остался в очереди и исполнил бы остаток позиции в этом же баре:
+        после частичной фиксации уровень живым не остаётся, остаток ждёт
+        новой постановки цели.
+        """
+        self._pending = [
+            order
+            for order in self._pending
+            if not (
+                order.reduce_only
+                and order.kind is OrderKind.LIMIT
+                and order.side is side
+                and order.limit_price == price
+            )
+        ]
 
     @staticmethod
     def _level_hit(level: Decimal | None, side: Side, bar: Bar, *, is_stop: bool) -> bool:
@@ -218,7 +265,7 @@ class BrokerSimulator:
             return None
         if order.side is Side.SELL and bar.low > stop:
             return None
-        price = self._slipped(self._stop_base(bar, order.side, stop), order.side)
+        price = self.slipped(self._stop_base(bar, order.side, stop), order.side)
         return self._make_fill(bar, order.side, price, self.costs.taker_fee, "stop", qty)
 
     def _limit_fill(self, order: Order, bar: Bar, qty: Decimal) -> Fill | None:
@@ -236,10 +283,15 @@ class BrokerSimulator:
     def _market_fill(self, order: Order, bar: Bar, qty: Decimal) -> Fill | None:
         if order.kind is not OrderKind.MARKET:
             return None
-        price = self._slipped(bar.close, order.side)
+        price = self.slipped(bar.close, order.side)
         return self._make_fill(bar, order.side, price, self.costs.taker_fee, "market", qty)
 
-    def _slipped(self, price: Decimal, side: Side) -> Decimal:
+    def slipped(self, price: Decimal, side: Side) -> Decimal:
+        """Уход базовой цены по направлению сделки.
+
+        Публичный: сведение окна в движке исполняет закрывающий филл той же
+        моделью, что и маркет-филл.
+        """
         if side is Side.BUY:
             return price * (Decimal(1) + self.costs.slippage)
         return price * (Decimal(1) - self.costs.slippage)

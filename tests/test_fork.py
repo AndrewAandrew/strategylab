@@ -143,9 +143,15 @@ def test_fork_diverges_when_stop_and_target_share_one_minute() -> None:
 
 
 def test_net_pnl_of_each_branch_is_the_window_result() -> None:
+    """Комиссия входа-лимита (maker) теперь в pnl: числа пересчитаны честно.
+
+    Пессимистичная ветка: −74.44635500 цены стопа и −40.571330187 комиссии
+    стопа, минус комиссия входа 13.538666 → −128.556351187. Оптимистичная:
+    +40.62 цели, −13.54679 комиссии цели, −13.538666 входа → 13.534544.
+    """
     f = _fork()
-    assert f.pessimistic.metrics.net_pnl == Decimal("-115.017685187")
-    assert f.optimistic.metrics.net_pnl == Decimal("27.07321")
+    assert f.pessimistic.metrics.net_pnl == Decimal("-128.556351187")
+    assert f.optimistic.metrics.net_pnl == Decimal("13.534544")
     assert f.pessimistic.metrics.trades == 1
     assert f.optimistic.metrics.trades == 1
     assert (f.pessimistic.metrics.wins, f.pessimistic.metrics.losses) == (0, 1)

@@ -12,6 +12,11 @@ class Metrics:
 
     Чистый аккумулятор: книгу позиций не ведёт и pnl из fill не выводит —
     реализованный pnl закрытой сделки передаёт вызывающий (движок).
+
+    `equity` — капитал прогона: стартовый капитал плюс накопленный реализованный
+    P&L. Стартовый капитал задаётся конструктором (`Metrics(equity=...)`) — его
+    видит стратегия в `StrategyState.equity`, и при нуле стратегия с
+    риск-сайзингом не открывает позицию вовсе.
     """
 
     trades: int = 0
@@ -22,6 +27,10 @@ class Metrics:
     max_drawdown: Decimal = Decimal("0")
     _peak: Decimal = Decimal("0")
     _pnls: list[Decimal] = field(default_factory=list, repr=False)
+
+    def __post_init__(self) -> None:
+        """Пик капитала стартует со стартового equity: просадка меряется от него, а не от нуля."""
+        self._peak = self.equity
 
     def record(self, fill: Fill, pnl: Decimal) -> None:
         self.trades += 1

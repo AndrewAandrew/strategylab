@@ -652,3 +652,87 @@ def test_take_profit_reason_is_pinned() -> None:
     _set_long_protection(b)
     fills = b.apply_bar(_bar(BAR_TARGET_EXACT))
     assert [f.reason for f in fills] == ["take_profit"]
+
+
+# Частичный тейк-профит: зеркало цели с размером, отдыхающий лимит того же уровня
+
+
+def _open_bracketed_long() -> BrokerSimulator:
+    """Лонг 20 по 100 с брекетом: стоп весь объём на 95, лимит половины на 107.5."""
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    _open_long(b, "20", "100")
+    b.submit(Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("20"), None, Decimal("95"), True))
+    b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("10"), Decimal("107.5"), None, True))
+    return b
+
+
+PARTIAL_BAR = (1717201200, "100", "108", "100", "105")
+
+
+def test_partial_target_mirrors_size_and_fills_only_half() -> None:
+    """Цель с половинным зеркалом закрывает половину позиции, стоп остаётся жив."""
+    b = _open_bracketed_long()
+
+    fills = b.apply_bar(_bar(PARTIAL_BAR))
+
+    assert [f.reason for f in fills] == ["take_profit"]
+    assert [f.qty for f in fills] == [Decimal("10")]
+    assert fills[0].price == Decimal("107.5")
+    assert b.position.qty == Decimal("10")
+    assert b.position.stop_price == Decimal("95")
+
+
+def test_partial_target_clears_mirror_and_the_resting_same_level_limit() -> None:
+    """После частичного выхода зеркало снято, и отдыхающий лимит уровня снят.
+
+    Второй бар с тем же хаєм не может исполнить остаток «вторым списком»:
+    уровень цели отработан полностью, у остатка цели нет до новой постановки.
+    """
+    b = _open_bracketed_long()
+    b.apply_bar(_bar(PARTIAL_BAR))
+
+    assert b.position.take_profit is None
+    assert b.position.take_profit_qty is None
+    assert [o for o in b.pending_orders if o.kind is OrderKind.LIMIT] == []
+
+    fills = b.apply_bar(_bar((1717201800, "107", "108", "96", "107")))
+
+    assert fills == []
+    assert b.position.qty == Decimal("10")
+
+
+def test_resubmitted_bracket_mirrors_breakeven_stop_and_new_target_on_remaining() -> None:
+    """Перезакладка брекета по остатку: стоп в безубыток, цель TP2 = перезапись зеркал."""
+    b = _open_bracketed_long()
+    b.apply_bar(_bar(PARTIAL_BAR))
+    b.submit(Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("10"), None, Decimal("100"), True))
+    b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("10"), Decimal("115"), None, True))
+
+    assert (
+        b.position.qty,
+        b.position.stop_price,
+        b.position.take_profit,
+        b.position.take_profit_qty,
+    ) == (Decimal("10"), Decimal("100"), Decimal("115"), Decimal("10"))
+
+    fills = b.apply_bar(_bar((1717202400, "108", "116", "108", "115")))
+    assert [f.reason for f in fills] == ["take_profit"]
+    assert [f.qty for f in fills] == [Decimal("10")]
+    assert fills[0].price == Decimal("115")
+    assert not b.position.is_open
+    assert b.pending_orders == []
+
+
+def test_partial_target_does_not_overwhelm_a_stop_on_the_same_bar() -> None:
+    """Стоп и частичная цель на одном баре: PESSIMISTIC решает в пользу стопа.
+    """
+    costs = CostModel()
+    b = _open_bracketed_long()
+
+    fills = b.apply_bar(_bar((1717201200, "100", "108", "94", "100")))
+
+    assert [f.reason for f in fills] == ["stop"]
+    assert [f.qty for f in fills] == [Decimal("20")]
+    assert fills[0].price == Decimal("95") * (Decimal(1) - costs.slippage)
+    assert not b.position.is_open
+    assert b.pending_orders == []

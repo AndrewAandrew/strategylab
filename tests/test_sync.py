@@ -29,7 +29,8 @@ def live_exchange() -> Iterator[None]:
     """Сбой обмена не должен читаться как расхождение баров.
 
     Таймаут или обрыв соединения говорят об окружении, а не о данных, поэтому
-    такой сбой падает с именем transport-ошибки. Повторов нет намеренно:
+    такой сбой падает с именем transport-ошибки. Обрывы сети уже повторяются
+    внутри `fetch_page`, но сам тест не переспрашивает биржу заново намеренно:
     молчаливый ретрай способен скрыть настоящее расхождение, и пропуском такой
     сбой тоже не становится — он остаётся падением.
     """
@@ -194,6 +195,82 @@ def test_fetch_page_asks_the_exchange_for_the_interval_mapped_from_ours(
 
     assert fetch_page(CURSOR_2020_04_01, "BTCUSDT", interval) == []
     assert asked[0]["interval"] == expected
+
+
+# Обрыв сети — транзиентная ошибка, и она повторяется; остальные ошибки — нет
+
+
+def _ok_response(url: str, rows: list[list[str]]) -> httpx.Response:
+    """Успешный ответ биржи с заданными строками kline."""
+    payload = {"retCode": 0, "result": {"list": rows}}
+    return httpx.Response(200, json=payload, request=httpx.Request("GET", url))
+
+
+def test_fetch_page_retries_a_transient_network_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Оборванный хендшейк не должен стоить страницы: запрос повторяется.
+
+    TLS-хендшейк к api.bybit.com рвётся примерно в сорока процентах запросов, и
+    пагинация по тысяче баров без повторов не доходит до конца никогда.
+    """
+    calls: list[int] = []
+    sleeps: list[float] = []
+
+    def fake_get(url: str, *, params: dict[str, object], timeout: float) -> httpx.Response:
+        calls.append(1)
+        if len(calls) < 3:
+            raise httpx.ConnectTimeout("хендшейк оборвался")
+        return _ok_response(url, [_row(1717200000)])
+
+    monkeypatch.setattr(sync.httpx, "get", fake_get)
+    monkeypatch.setattr(sync.time, "sleep", sleeps.append)
+
+    assert fetch_page(CURSOR_2020_04_01, "BTCUSDT") == [_row(1717200000)]
+    assert len(calls) == 3
+    # задержка растёт: сеть после обрыва оживает не мгновенно
+    assert sleeps == [1.0, 2.0]
+
+
+def test_fetch_page_raises_the_last_network_failure_when_attempts_run_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Исчерпанные попытки — падение с исходной ошибкой, а не тишина.
+
+    Проглоченный сбой сети выглядел бы как пустая страница и тихо исказил бы
+    историю, поэтому последняя неудачная попытка обязана поднимать ошибку.
+    """
+    calls: list[int] = []
+
+    def fake_get(url: str, *, params: dict[str, object], timeout: float) -> httpx.Response:
+        calls.append(1)
+        raise httpx.ConnectTimeout("хендшейк оборвался")
+
+    monkeypatch.setattr(sync.httpx, "get", fake_get)
+    monkeypatch.setattr(sync.time, "sleep", lambda seconds: None)
+
+    with pytest.raises(httpx.ConnectTimeout):
+        fetch_page(CURSOR_2020_04_01, "BTCUSDT")
+
+    assert len(calls) == sync._ATTEMPTS
+
+
+def test_fetch_page_does_not_retry_an_exchange_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Отказ биржи повтором не лечится: он повторится точно так же."""
+    calls: list[int] = []
+
+    def fake_get(url: str, *, params: dict[str, object], timeout: float) -> httpx.Response:
+        calls.append(1)
+        payload = {"retCode": 10001, "retMsg": "symbol invalid"}
+        return httpx.Response(200, json=payload, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(sync.httpx, "get", fake_get)
+    monkeypatch.setattr(sync.time, "sleep", lambda seconds: None)
+
+    with pytest.raises(BybitError):
+        fetch_page(CURSOR_2020_04_01, "NOSUCHUSDT")
+
+    assert len(calls) == 1
 
 
 # Сеть

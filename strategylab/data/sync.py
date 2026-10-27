@@ -1,4 +1,5 @@
 import sqlite3
+import time
 from decimal import Decimal
 from typing import Any
 
@@ -13,6 +14,14 @@ _KLINE_WIDTH = 7
 _MILLISECONDS_IN_SECOND = 1000
 _PAGE_LIMIT = 1000
 _TIMEOUT = 10.0
+
+# Попыток всего, вместе с первой: к бирже ходят страницами по тысяче баров, и
+# один оборванный хендшейк не должен стоить всего многочасового прогона.
+_ATTEMPTS = 5
+# Задержка перед повтором растёт вдвое: после обрыва сеть обычно оживает за
+# секунды, а долгий сон перед HTTP-таймаутом всё равно ничего не приносит.
+_RETRY_BASE_SLEEP = 1.0
+_RETRY_FACTOR = 2.0
 
 _BYBIT_INTERVAL = {
     Interval.MINUTE: "1",
@@ -63,24 +72,39 @@ def fetch_page(
     же границы сети, поэтому преобразование живёт здесь, а не у вызывающего.
     Наш `Interval` переводится в интервал биржи здесь же — HTTP-клиент в проекте
     один, и сверка агрегации с биржей идёт через него, а не в обход.
+
+    Обрыв сети (TLS-хендшейк, таймаут соединения) — транзиентная ошибка, и она
+    повторяется с растущей задержкой: страниц в прогоне тысячи, и одна оборванная
+    иначе рушит всю загрузку. Отказ биржи, неверный статус и чужая строка
+    повторами не лечатся — они повторятся точно так же, поэтому молчаливый ретрай
+    лишь отложил бы падение, потеряв его причину.
     """
-    response = httpx.get(
-        BYBIT_KLINE,
-        params={
-            "category": "linear",
-            "symbol": symbol,
-            "interval": _BYBIT_INTERVAL[interval],
-            "end": cursor_end * _MILLISECONDS_IN_SECOND,
-            "limit": _PAGE_LIMIT,
-        },
-        timeout=_TIMEOUT,
-    )
-    response.raise_for_status()
-    payload: Any = response.json()
-    if payload["retCode"] != 0:
-        raise BybitError(f"{symbol}: retCode={payload['retCode']} {payload.get('retMsg', '')}")
-    rows: list[list[str]] = payload["result"]["list"]
-    return rows
+    attempt = 0
+    while True:
+        try:
+            response = httpx.get(
+                BYBIT_KLINE,
+                params={
+                    "category": "linear",
+                    "symbol": symbol,
+                    "interval": _BYBIT_INTERVAL[interval],
+                    "end": cursor_end * _MILLISECONDS_IN_SECOND,
+                    "limit": _PAGE_LIMIT,
+                },
+                timeout=_TIMEOUT,
+            )
+        except httpx.TransportError:
+            attempt += 1
+            if attempt >= _ATTEMPTS:
+                raise
+            time.sleep(_RETRY_BASE_SLEEP * _RETRY_FACTOR ** (attempt - 1))
+            continue
+        response.raise_for_status()
+        payload: Any = response.json()
+        if payload["retCode"] != 0:
+            raise BybitError(f"{symbol}: retCode={payload['retCode']} {payload.get('retMsg', '')}")
+        rows: list[list[str]] = payload["result"]["list"]
+        return rows
 
 
 def sync_1m(conn: sqlite3.Connection, symbol: str, start_ts: int, end_ts: int) -> int:

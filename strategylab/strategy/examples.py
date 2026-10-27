@@ -7,6 +7,9 @@ from decimal import Decimal
 from strategylab.broker.orders import Order, OrderKind, Side
 from strategylab.core.bars import Bar
 from strategylab.strategy.base import Strategy, StrategyState
+from strategylab.strategy.flat_keltner import FlatKeltnerStrategy
+from strategylab.strategy.sweep_liquidity import SweepLiquidityStrategy
+from strategylab.strategy.trend_pullback import TrendPullbackStrategy
 
 
 class UnknownStrategy(Exception):
@@ -67,12 +70,31 @@ class BuyHoldStrategy:
         return [Order(Side.BUY, OrderKind.MARKET, Decimal("1"), None, None, False)]
 
 
+# Реестр стратегий по именам: нужен там, где требуется сам класс, а не
+# готовый экземпляр. `build` разбирает параметры по-своему (у `sma_cross`
+# они обязательны), а инструменты вроде scripts/sweep.py берут из класса
+# дефолты конструктора — иначе дефолтный параметр нечем заменить.
+STRATEGY_CLASSES: dict[str, type[Strategy]] = {
+    "sma_cross": SmaCrossStrategy,
+    "buy_hold": BuyHoldStrategy,
+    "flat_keltner": FlatKeltnerStrategy,
+    "trend_pullback": TrendPullbackStrategy,
+    "sweep_liquidity": SweepLiquidityStrategy,
+}
+
+
 def build(name: str, params: Mapping[str, Decimal]) -> Strategy:
     """Реестр стратегий: имя и параметры → экземпляр."""
     if name == "sma_cross":
         return SmaCrossStrategy(fast=params["fast"], slow=params["slow"])
     if name == "buy_hold":
         return BuyHoldStrategy()
+    if name == "flat_keltner":
+        return FlatKeltnerStrategy.from_params(params)
+    if name == "trend_pullback":
+        return TrendPullbackStrategy.from_params(params)
+    if name == "sweep_liquidity":
+        return SweepLiquidityStrategy.from_params(params)
     raise UnknownStrategy(name)
 
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from strategylab.broker.costs import CostModel, IntrabarOrder
 from strategylab.core.metrics import Metrics
+from strategylab.core.trades import Trade
 from strategylab.data.zones import Zone
 from strategylab.spec.spec import StrategySpec
 
@@ -25,6 +26,10 @@ class Report:
 
     Заморожен: отчёт — воспоминание о моменте разметки, а не живой объект.
     zones_used — кортеж, а не список: неизменяемость выражена в типе.
+
+    `trades` — закрытые сделки прогона: журнал ведётся по запросу и по
+    умолчанию пуст. В текст и JSON отчёта сделки не входят — формат отчёта
+    зафиксирован, — но доступны экспорту сцены.
     """
 
     spec_version: str
@@ -33,6 +38,7 @@ class Report:
     trials: int
     intrabar: IntrabarOrder
     metrics: Metrics
+    trades: tuple[Trade, ...] = ()
 
     def to_text(self) -> str:
         """Текстовый отчёт: ровно пять строк шапки, затем метрики — те же, что в JSON."""
@@ -97,12 +103,14 @@ def build_report(
     trials: int | None,
     intrabar: IntrabarOrder,
     metrics: Metrics,
+    trades: tuple[Trade, ...] = (),
 ) -> Report:
     """Собирает отчёт прогона; неполная шапка — исключение, а не отчёт.
 
     Проверяются ровно первые четыре поля шапки: spec_version, zones_used,
     costs, trials. metrics в проверке не участвует: его тип не Optional,
     и None здесь был бы нарушением типа, а не случаем времени выполнения.
+    Журнал сделок — необязательный: без него отчёт пуст по сделкам.
     """
     spec_version: str | None = spec.version
     if spec_version is None or zones_used is None or costs is None or trials is None:
@@ -124,6 +132,7 @@ def build_report(
         trials=trials,
         intrabar=intrabar,
         metrics=metrics,
+        trades=trades,
     )
 
 

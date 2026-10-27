@@ -111,7 +111,8 @@ def test_state_carries_signed_position_equity_and_bar_index() -> None:
 
     entry_price = Decimal("101") * (Decimal(1) + SLIPPAGE)
     exit_price = Decimal("103") * (Decimal(1) - SLIPPAGE)
-    realized = (exit_price - entry_price) - TAKER_FEE * exit_price
+    # Комиссии обеих сторон: закрывающая от цены выхода, входная — от цены входа.
+    realized = (exit_price - entry_price) - TAKER_FEE * exit_price - TAKER_FEE * entry_price
 
     assert [s.bar_index for s in strategy.states] == [0, 1, 2, 3, 4]
     assert [s.position for s in strategy.states] == [
@@ -162,12 +163,20 @@ def test_flip_realizes_only_the_closed_part() -> None:
     Engine().run(feed, strategy, broker, metrics)
 
     entry_price = Decimal("101") * (Decimal(1) + SLIPPAGE)
+    entry_fee = TAKER_FEE * Decimal("1") * entry_price
     flip_price = Decimal("103") * (Decimal(1) - SLIPPAGE)
     flip_fee = TAKER_FEE * Decimal("3") * flip_price
-    realized_flip = (flip_price - entry_price) - flip_fee
+    # Комиссия переворотного филла делится по объёму: одна единица закрылась,
+    # две открыли шорт — доля закрытой части в realized, доля новой позиции
+    # станет её входной комиссией.
+    realized_flip = (flip_price - entry_price) - flip_fee * Decimal("1") / Decimal("3") - entry_fee
 
-    close_fee = TAKER_FEE * Decimal("2") * Decimal("103")
-    realized_close = (Decimal("103") - flip_price) * Decimal("2") * Decimal(-1) - close_fee
+    close_price = Decimal("103") * (Decimal(1) + SLIPPAGE)
+    close_fee = TAKER_FEE * Decimal("2") * close_price
+    short_entry_fee = flip_fee * Decimal("2") / Decimal("3")
+    realized_close = (
+        (close_price - flip_price) * Decimal("2") * Decimal(-1) - close_fee - short_entry_fee
+    )
 
     assert not broker.position.is_open
     assert metrics.trades == 2
@@ -200,7 +209,8 @@ def test_open_position_is_closed_at_the_end_of_the_window(
     close_fill = applied[-1]
     assert close_fill.ts == bars[-1].ts
     assert close_fill.side is Side.SELL
-    assert close_fill.price == bars[-1].close
+    # Сведение окна исполняется как маркет: цена закрытия с уводом.
+    assert close_fill.price == bars[-1].close * (Decimal(1) - SLIPPAGE)
     assert close_fill.qty == Decimal("1")
     assert close_fill.reason == "market"
     assert metrics.trades == 1

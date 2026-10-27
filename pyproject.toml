@@ -33,6 +33,7 @@ markers = [
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["strategydocs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
