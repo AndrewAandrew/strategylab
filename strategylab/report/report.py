@@ -63,6 +63,12 @@ class Report:
             f"profit_factor: {_plain_or_null(m.profit_factor())}",
             f"win_rate: {_plain_or_null(m.win_rate())}",
             f"sharpe: {_plain_or_null(m.sharpe())}",
+            f"long_trades: {m.long.trades}",
+            f"long_net_pnl: {_plain(m.long.net_pnl)}",
+            f"long_profit_factor: {_plain_or_null(m.long.profit_factor())}",
+            f"short_trades: {m.short.trades}",
+            f"short_net_pnl: {_plain(m.short.net_pnl)}",
+            f"short_profit_factor: {_plain_or_null(m.short.profit_factor())}",
         ))
 
     def to_json(self) -> str:
@@ -92,6 +98,12 @@ class Report:
             "profit_factor": _optional_plain(m.profit_factor()),
             "win_rate": _optional_plain(m.win_rate()),
             "sharpe": _optional_plain(m.sharpe()),
+            "long_trades": m.long.trades,
+            "long_net_pnl": _plain(m.long.net_pnl),
+            "long_profit_factor": _optional_plain(m.long.profit_factor()),
+            "short_trades": m.short.trades,
+            "short_net_pnl": _plain(m.short.net_pnl),
+            "short_profit_factor": _optional_plain(m.short.profit_factor()),
         }
         return json.dumps(payload)
 

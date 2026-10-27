@@ -1,4 +1,5 @@
 import json
+from collections.abc import Sequence
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any, cast
@@ -88,7 +89,7 @@ def test_to_text_puts_header_in_first_five_lines() -> None:
     )
     assert isinstance(report, Report)
     lines = report.to_text().splitlines()
-    assert len(lines) == 14
+    assert len(lines) == 20
     assert lines[0] == f"spec_version: {spec.version}"
     assert lines[1] == "zones_used: fit, holdout"
     assert lines[2].startswith("costs: taker_fee=")
@@ -104,14 +105,26 @@ def test_to_text_puts_header_in_first_five_lines() -> None:
     assert lines[11] == "profit_factor: null"
     assert lines[12] == "win_rate: null"
     assert lines[13] == "sharpe: null"
+    assert lines[14] == "long_trades: 0"
+    assert lines[15] == "long_net_pnl: 0"
+    assert lines[16] == "long_profit_factor: null"
+    assert lines[17] == "short_trades: 0"
+    assert lines[18] == "short_net_pnl: 0"
+    assert lines[19] == "short_profit_factor: null"
 
 
 def make_report_with_metrics(
     trades: int = 0,
     wins: int = 0,
     losses: int = 0,
+    long_pnls: Sequence[Decimal] = (),
+    short_pnls: Sequence[Decimal] = (),
 ) -> Report:
-    """Отчёт с метриками, собранными записью fills: выигрыш +10+i, убыток -(10+j)."""
+    """Отчёт с метриками, собранными записью fills: выигрыш +10+i, убыток -(10+j).
+
+    long_pnls/short_pnls записываются теми же вызовами metrics.record, но с
+    стороной закрываемой позиции — стороны копят те же сделки, что и итог.
+    """
     if wins + losses > trades:
         raise ValueError("wins + losses cannot exceed trades")
     metrics = Metrics()
@@ -129,6 +142,10 @@ def make_report_with_metrics(
         metrics.record(fill, Decimal(-(10 + index)))
     for _ in range(trades - wins - losses):
         metrics.record(fill, Decimal("0"))
+    for pnl in long_pnls:
+        metrics.record(fill, pnl, Side.BUY)
+    for pnl in short_pnls:
+        metrics.record(fill, pnl, Side.SELL)
     return build_report(
         spec=make_spec(),
         zones_used=(Zone.FIT,),
@@ -139,10 +156,39 @@ def make_report_with_metrics(
     )
 
 
+def test_report_publishes_sides_separately() -> None:
+    r = make_report_with_metrics(
+        long_pnls=(Decimal("-20"), Decimal("-20")), short_pnls=(Decimal("100"),)
+    )
+    text = r.to_text()
+    assert "long_trades: 2" in text and "long_net_pnl: -40" in text
+    assert "short_trades: 1" in text and "short_net_pnl: 100" in text
+    assert "long_profit_factor: 0" in text        # убытки есть, прибыли нет
+    assert "short_profit_factor: null" in text    # убыточных сделок у стороны нет
+
+
+def test_json_keys_include_sides_after_sharpe() -> None:
+    payload = json.loads(make_report_with_metrics().to_json())
+    assert list(payload)[-6:] == [
+        "long_trades", "long_net_pnl", "long_profit_factor",
+        "short_trades", "short_net_pnl", "short_profit_factor",
+    ]
+
+
 def test_to_text_includes_the_ratio_metrics_with_the_json_values() -> None:
     report = make_report_with_metrics(trades=2, wins=1, losses=1)
     lines = report.to_text().splitlines()
-    assert lines[-3:] == ["profit_factor: 1", "win_rate: 0.5", "sharpe: 0"]
+    assert lines[-9:] == [
+        "profit_factor: 1",
+        "win_rate: 0.5",
+        "sharpe: 0",
+        "long_trades: 0",
+        "long_net_pnl: 0",
+        "long_profit_factor: null",
+        "short_trades: 0",
+        "short_net_pnl: 0",
+        "short_profit_factor: null",
+    ]
 
 
 def test_profit_factor_serialises_as_null() -> None:
@@ -233,5 +279,11 @@ def test_json_key_order_is_fixed() -> None:
         "profit_factor",
         "win_rate",
         "sharpe",
+        "long_trades",
+        "long_net_pnl",
+        "long_profit_factor",
+        "short_trades",
+        "short_net_pnl",
+        "short_profit_factor",
     ]
     assert list(payload["costs"]) == ["taker_fee", "maker_fee", "slippage", "leverage"]

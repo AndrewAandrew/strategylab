@@ -101,6 +101,12 @@ def test_run_prints_both_reports_and_verdict(tmp_path: Path, capsys) -> None:
             "profit_factor: 0",
             "win_rate: 0",
             "sharpe: null",
+            "long_trades: 1",
+            "long_net_pnl: -127.083013460",
+            "long_profit_factor: 0",
+            "short_trades: 0",
+            "short_net_pnl: 0",
+            "short_profit_factor: null",
         ]
         + header_lines(spec.version)
         + [
@@ -114,6 +120,12 @@ def test_run_prints_both_reports_and_verdict(tmp_path: Path, capsys) -> None:
             "profit_factor: 0",
             "win_rate: 0",
             "sharpe: null",
+            "long_trades: 1",
+            "long_net_pnl: -127.083013460",
+            "long_profit_factor: 0",
+            "short_trades: 0",
+            "short_net_pnl: 0",
+            "short_profit_factor: null",
         ]
         + ["ВЕРДИКТ: измерима"]
     )
@@ -143,10 +155,10 @@ def test_run_parses_strategy_params_as_decimal_strings(tmp_path: Path, capsys) -
     assert lines[0:4] == header_lines(spec.version)
     assert lines[4] == "intrabar: PESSIMISTIC"
     assert lines[5] == "trades: 0"
-    assert lines[14:18] == header_lines(spec.version)
-    assert lines[18] == "intrabar: OPTIMISTIC"
-    assert lines[19] == "trades: 0"
-    assert lines[28] == "ВЕРДИКТ: измерима"
+    assert lines[20:24] == header_lines(spec.version)
+    assert lines[24] == "intrabar: OPTIMISTIC"
+    assert lines[25] == "trades: 0"
+    assert lines[40] == "ВЕРДИКТ: измерима"
 
 
 # run: начальный капитал контракта
@@ -242,7 +254,7 @@ def test_run_trades_when_capital_is_given(tmp_path: Path, capsys) -> None:
 
     lines = capsys.readouterr().out.splitlines()
     assert lines[5] == "trades: 1"
-    assert lines[19] == "trades: 1"
+    assert lines[25] == "trades: 1"
     # Капитал в equity: 10000 старта и −8.8 по сделке (комиссии обеих сторон
     # и увод сведённого филла), просадка — от капитала.
     assert lines[9] == "equity: 9991.200000000"
@@ -258,7 +270,7 @@ def test_run_without_capital_trades_by_default(tmp_path: Path, capsys) -> None:
 
     lines = capsys.readouterr().out.splitlines()
     assert lines[5] == "trades: 1"
-    assert lines[19] == "trades: 1"
+    assert lines[25] == "trades: 1"
 
 
 def test_run_does_not_trade_with_zero_capital(tmp_path: Path, capsys) -> None:
@@ -270,7 +282,7 @@ def test_run_does_not_trade_with_zero_capital(tmp_path: Path, capsys) -> None:
 
     lines = capsys.readouterr().out.splitlines()
     assert lines[5] == "trades: 0"
-    assert lines[19] == "trades: 0"
+    assert lines[25] == "trades: 0"
     assert lines[9] == "equity: 0"
 
 
