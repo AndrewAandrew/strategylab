@@ -128,7 +128,8 @@ def _record_realized(
         exit_fee = fill.fee if closed == fill.qty else fill.fee * closed / fill.qty
         entry_fee = before_entry_fee * closed / before_qty
         realized = (fill.price - before_entry) * closed * sign - exit_fee - entry_fee
-        metrics.record(fill, realized)
+        # Сторона закрываемой позиции, а не филла: у закрывающего филла она противоположная.
+        metrics.record(fill, realized, before_side)
         remaining -= closed
         if trade_log is not None:
             trade_log.close(fill, before_entry, realized, remaining)
@@ -161,9 +162,11 @@ def _close_window(
     fill = Fill(
         ts=bar.ts, side=exit_side, price=price, qty=position.qty, fee=fee, reason="market"
     )
+    side_before_close = position.side
     sign = Decimal(1) if position.side is Side.BUY else Decimal(-1)
     realized = (price - position.entry_price) * position.qty * sign - fee - position.entry_fee
     position.apply_fill(fill)
-    metrics.record(fill, realized)
+    # В bucket стороны позиции: закрывающий филл короткой позиции — BUY.
+    metrics.record(fill, realized, side_before_close)
     if trade_log is not None:
         trade_log.close(fill, position.entry_price, realized, Decimal("0"))

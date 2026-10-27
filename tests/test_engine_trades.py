@@ -215,3 +215,21 @@ def test_fork_with_recording_reports_trades_per_branch() -> None:
         assert with_trades.metrics.net_pnl == plain.metrics.net_pnl
         assert len(with_trades.trades) == 1
         assert with_trades.trades[0].pnl == with_trades.metrics.net_pnl
+
+
+# Bucket стороны: сделка принадлежит стороне позиции, а не закрывающего филла
+
+
+def test_short_trade_lands_in_short_bucket() -> None:
+    metrics = _run({0: [_market(Side.SELL, "1")], 2: [_market(Side.BUY, "1")]}, None)
+    assert metrics.short.trades == 1
+    assert metrics.long.trades == 0
+    assert metrics.short.net_pnl == metrics.net_pnl
+    assert metrics.long.net_pnl + metrics.short.net_pnl == metrics.net_pnl
+
+
+def test_window_close_is_bucketed_by_position_side() -> None:
+    # Стратегия открывает шорт и больше ничего: движок сводит окно на последнем баре.
+    metrics = _run({0: [_market(Side.SELL, "1")]}, None)
+    assert metrics.short.trades == 1 and metrics.long.trades == 0
+    assert metrics.short.net_pnl == metrics.net_pnl
