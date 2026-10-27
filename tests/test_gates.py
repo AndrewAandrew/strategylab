@@ -71,7 +71,7 @@ def _header_lines(*, pessimistic: bool = True) -> list[str]:
         "grid: donch_len=24,48,96; atr_mult=1.0,1.5,2.0; bias_len=0,48",
         "spec_version (база): v-base",
         "zones_used: fit",
-        "costs: taker_fee=0.0005 maker_fee=0.0002 slippage=0.0005 leverage=1",
+        "costs: taker_fee=0.0006 maker_fee=0.0002 slippage=0.0005 leverage=1",
         "touches: holdout=0, live=0",
     ]
     lines.append("intrabar: PESSIMISTIC" if pessimistic else "intrabar: OPTIMISTIC")

@@ -313,7 +313,7 @@ def test_stop_bracket_is_placed_on_the_fill_bar() -> None:
     assert bracket == [
         Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("99"), True)
     ]
-    #Pending израсходован: на следующем баре брекет не дублируется и вход не повторяется.
+    # Pending израсходован: на следующем баре брекет не дублируется и вход не повторяется.
     repeat = _orders(s, _bars(1, first=len(bars) + 1)[0], filled)
     assert repeat == []
     # Никакого LIMIT-ордера стратегия не выдаёт вовсе: фиксированной цели в спеке нет.
