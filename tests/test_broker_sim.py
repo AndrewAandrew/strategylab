@@ -736,3 +736,24 @@ def test_partial_target_does_not_overwhelm_a_stop_on_the_same_bar() -> None:
     assert fills[0].price == Decimal("95") * (Decimal(1) - costs.slippage)
     assert not b.position.is_open
     assert b.pending_orders == []
+
+
+def test_second_stop_submit_replaces_the_resting_mirror() -> None:
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    b.submit(Order(Side.BUY, OrderKind.MARKET, Decimal("1"), None, None, False))
+    b.apply_bar(_bar((1, "100", "101", "99", "100")))
+    b.submit(Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("95"), True))
+    b.submit(Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("98"), True))
+    stops = [o for o in b.pending_orders if o.kind is OrderKind.STOP_MARKET]
+    assert len(stops) == 1 and stops[0].stop_price == Decimal("98")
+    assert b.position.stop_price == Decimal("98")
+
+
+def test_limit_mirror_is_not_deduplicated() -> None:
+    # Две reduce_only LIMIT разных объёмов — разные цели: движок обязан оставить обе.
+    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+    b.submit(Order(Side.BUY, OrderKind.MARKET, Decimal("1"), None, None, False))
+    b.apply_bar(_bar((1, "100", "101", "99", "100")))
+    b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("0.4"), Decimal("105"), None, True))
+    b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("0.6"), Decimal("110"), None, True))
+    assert len([o for o in b.pending_orders if o.kind is OrderKind.LIMIT]) == 2

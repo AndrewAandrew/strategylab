@@ -52,9 +52,24 @@ class BrokerSimulator:
         остаток позиции, размер зеркалу не нужен. LIMIT зеркалит уровень
         и размер: тейк-профит на уменьшенной заявке исполняется её объёмом,
         а не всей позицией — так работает частичная фиксация прибыли.
+
+        Устаревшее зеркало стопа снимается с покоя: уровень уже перезаписан
+        в позицию, resting-заявка того же направления никогда не исполнится
+        (`_apply_stops` пропускает reduce-only) и только оплачивает обход
+        `_pending` в apply_bar. LIMIT-цели не вытесняются: resting-цели
+        разных объёмов — разные частичные тейки, они должны доживать.
         """
         if order.kind is OrderKind.STOP_MARKET and order.stop_price is not None:
             self._position.stop_price = order.stop_price
+            self._pending = [
+                resting
+                for resting in self._pending
+                if not (
+                    resting.reduce_only
+                    and resting.kind is OrderKind.STOP_MARKET
+                    and resting.side is order.side
+                )
+            ]
         elif order.kind is OrderKind.LIMIT and order.limit_price is not None:
             self._position.take_profit = order.limit_price
             self._position.take_profit_qty = order.qty
