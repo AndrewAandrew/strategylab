@@ -14,13 +14,16 @@
 расчёт не попадает. `atr_len = 14` и `risk_frac = 0.01` — константы модуля,
 свободных параметров ровно три (Global Constraint 10).
 
-Реализовано (задача 7): лонг-вход и стоп-брекет. На закрытии 15m-бара B, когда
-окно готово, позиция плоская и исполнение не ожидается, `Close(B) > hh` (и,
-если фильтр уклона включён, `Close(B) > bias`) порождает MARKET-заявку с
-размером `equity · risk_frac / (atr_mult · ATR)`; ATR морозится на баре
-сигнала. На баре исполнения входа вешается reduce_only STOP_MARKET по
-`close − atr_mult · ATR_замороженный`. Фиксированной цели в спеке нет — LIMIT
-не выдаётся никогда. Шорт (задача 8), реверс (9) и трейлинг (10) надстраиваются
+Реализовано (задача 8): вход в обе стороны и зеркальный стоп-брекет. На
+закрытии 15m-бара B, когда окно готово, позиция плоская и исполнение не
+ожидается, `Close(B) > hh` или `Close(B) < ll` (при включённом фильтре уклона
+— соответственно и `Close(B) > bias` либо `Close(B) < bias`) порождает
+MARKET-заявку с размером `equity · risk_frac / (atr_mult · ATR)`; ATR морозится
+на баре сигнала. На баре исполнения входа вешается reduce_only STOP_MARKET по
+`close − atr_mult · ATR_замороженный` для лонга и `close + atr_mult · ATR` для
+шорта — стоп всегда с противоположной от входа стороны. Фиксированной цели в
+спеке нет — LIMIT не выдаётся никогда. Реверс (задача 9) и трейлинг (10)
+надстраиваются
 следующими задачами плана.
 """
 
@@ -97,7 +100,7 @@ class TwoSidedMomentumStrategy:
         self._atr_value: Decimal | None = None
         self._bias_value: Decimal | None = None
         # Сигнал дан, ждём исполнения: сторона входа и ATR, замороженный на баре
-        # сигнала. Именованы так намеренно — задачи 8–10 их расширяют.
+        # сигнала. Задача 8 заполнила обе стороны; задачи 9–10 их расширяют.
         self._pending_entry: Side | None = None
         self._pending_atr: Decimal | None = None
 
@@ -116,12 +119,13 @@ class TwoSidedMomentumStrategy:
         return self._bias_len
 
     def on_bar(self, bar: Bar, state: StrategyState) -> list[Order]:
-        """Один 1m-бар: обновить агрегаты 15m, искать лонг-вход, вешать брекет.
+        """Один 1m-бар: обновить агрегаты 15m, искать вход, вешать брекет.
 
         Порядок как в FlatKeltnerStrategy.on_bar: сначала закрытие 15m-бара и
         поиск сигнала входа (ограничен `state.position == 0` и отсутствием
         ожидающего исполнения), затем — проверка, что выданный MARKET уже
-        исполнен: если позиция открыта и вход ожидается, на этом баре вешается
+        исполнен: если позиция открыта в сторону ожидания (лонг при знаке
+        позиции > 0, шорт при < 0) и вход ожидается, на этом баре вешается
         стоп-брекет и ожидающее состояние снимается.
         """
         orders: list[Order] = []
@@ -131,7 +135,11 @@ class TwoSidedMomentumStrategy:
             entry = self._entry_order(bar15, state)
             if entry is not None:
                 orders.append(entry)
-        if self._pending_entry is Side.BUY and state.position > 0:
+        pending = self._pending_entry
+        filled = (pending is Side.BUY and state.position > 0) or (
+            pending is Side.SELL and state.position < 0
+        )
+        if filled:
             # Вход исполнен на этом баре: цена входа оценивается его закрытием.
             self._pending_entry = None
             atr_pending = self._pending_atr
@@ -141,13 +149,16 @@ class TwoSidedMomentumStrategy:
         return orders
 
     def _entry_order(self, bar15: Bar, state: StrategyState) -> Order | None:
-        """LONG-вход: Close(B) выше хаёва Дончиана — MARKET-ордер с размером по риску.
+        """Вход по пробою Дончиана в обе стороны: MARKET-ордер с размером по риску.
 
-        Готовность окна — по `_hh`/`_atr_value` (после границы warmup);
+        Сторона читается из сравнения close с каналом: `Close(B) > hh` — лонг,
+        `Close(B) < ll` — шорт; оба не выполняются одновременно (hh >= ll).
+        Готовность окна — по `_hh`/`_ll`/`_atr_value` (после границы warmup);
         `_bias_value` в этой проверке НЕ участвует: при выключенном фильтре
         (`bias_len == 0`) он `None` по замыслу, а не как «не готово»
-        (решение R9). Фильтр уклона добавляет условие Close(B) > bias только
-        когда включён (`self._bias is not None`), и тогда уже его `None`
+        (решение R9). Фильтр уклона добавляет условие по сторону сигнала —
+        Close(B) > bias для лонга и зеркальное Close(B) < bias для шорта, —
+        только когда включён (`self._bias is not None`), и тогда уже его `None`
         честно означает «bias ещё не посчитан».
 
         Размер `qty = equity · _RISK_FRAC / (atr_mult · atr)`: риск на сделку
@@ -157,23 +168,32 @@ class TwoSidedMomentumStrategy:
         не более одного сигнала на позицию.
         """
         hh = self._hh
+        ll = self._ll
         atr = self._atr_value
-        if hh is None or atr is None or atr <= 0:
+        if hh is None or ll is None or atr is None or atr <= 0:
             return None
         if state.position != 0 or self._pending_entry is not None:
             return None
-        if bar15.close <= hh:
+        if bar15.close > hh:
+            side: Side = Side.BUY
+        elif bar15.close < ll:
+            side = Side.SELL
+        else:
             return None
         if self._bias is not None:
             bias = self._bias_value
-            if bias is None or bar15.close <= bias:
+            if bias is None:
+                return None
+            if side is Side.BUY and bar15.close <= bias:
+                return None
+            if side is Side.SELL and bar15.close >= bias:
                 return None
         if state.equity <= 0:
             return None
         qty = state.equity * _RISK_FRAC / (self._atr_mult * atr)
-        self._pending_entry = Side.BUY
+        self._pending_entry = side
         self._pending_atr = atr
-        return Order(Side.BUY, OrderKind.MARKET, qty, None, None, False)
+        return Order(side, OrderKind.MARKET, qty, None, None, False)
 
     def _bracket_orders(self, bar: Bar, state: StrategyState, entry_atr: Decimal) -> list[Order]:
         """Стоп-брекет на баре исполнения входа: единственный выход, без цели.
@@ -182,11 +202,18 @@ class TwoSidedMomentumStrategy:
         движок не отдаёт стратегии цену исполнения (решение 4 Flat-Кельтнера —
         ошибка оценки равна одному проскальзыванию). Дистанция стопа — та же,
         что закладывалась в размер: `atr_mult · entry_atr`, с ATR, замороженным
-        на сигнальном баре. LIMIT-ордера нет: фиксированной цели в спеке нет.
+        на сигнальном баре. Стоп зеркален позиции: под лонгом (`position > 0`,
+        заявка SELL) и над шортом (`position < 0`, заявка BUY, объём — модуль
+        позиции). LIMIT-ордера нет: фиксированной цели в спеке нет.
         """
         entry = bar.close
-        stop = entry - self._atr_mult * entry_atr
-        return [Order(Side.SELL, OrderKind.STOP_MARKET, state.position, None, stop, True)]
+        distance = self._atr_mult * entry_atr
+        position = state.position
+        if position > 0:
+            stop = entry - distance
+            return [Order(Side.SELL, OrderKind.STOP_MARKET, position, None, stop, True)]
+        stop = entry + distance
+        return [Order(Side.BUY, OrderKind.STOP_MARKET, -position, None, stop, True)]
 
     def _update_15m(self, bar15: Bar) -> None:
         """Закрытый 15m-бар B: ATR и bias включая B, Дончиан по окну без B.
