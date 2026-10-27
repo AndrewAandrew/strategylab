@@ -1,3 +1,4 @@
+from dataclasses import replace
 from decimal import Decimal
 
 from strategylab.broker.orders import Fill, Side
@@ -13,6 +14,10 @@ def make_fill() -> Fill:
         fee=Decimal("0"),
         reason="close",
     )
+
+
+def _fill(side: Side) -> Fill:
+    return replace(make_fill(), side=side)
 
 
 def record(m: Metrics, pnl: str) -> None:
@@ -127,3 +132,30 @@ def test_net_pnl_and_equity_track_running_sum() -> None:
     record(m, "-4")
     assert m.net_pnl == Decimal("6")
     assert m.equity == Decimal("6")
+
+
+def test_record_splits_by_side() -> None:
+    m = Metrics(equity=Decimal("10000"))
+    m.record(_fill(Side.SELL), Decimal("-50"), Side.BUY)   # лонг закрыт в убыток
+    m.record(_fill(Side.BUY), Decimal("120"), Side.SELL)   # шорт закрыт в прибыль
+    assert m.long.trades == 1 and m.long.losses == 1
+    assert m.short.trades == 1 and m.short.wins == 1
+    assert m.long.net_pnl == Decimal("-50")
+    assert m.short.net_pnl == Decimal("120")
+    assert m.trades == 2 and m.net_pnl == Decimal("70")
+
+
+def test_side_profit_factor_is_none_without_losses() -> None:
+    m = Metrics()
+    m.record(_fill(Side.BUY), Decimal("10"), Side.BUY)
+    m.record(_fill(Side.BUY), Decimal("5"), Side.BUY)
+    assert m.long.profit_factor() is None
+    assert m.long.win_rate() == Decimal("1")
+    assert m.short.trades == 0 and m.short.profit_factor() is None
+
+
+def test_record_without_side_keeps_totals_only() -> None:
+    m = Metrics(equity=Decimal("10000"))
+    m.record(_fill(Side.SELL), Decimal("-5"))
+    assert m.trades == 1 and m.net_pnl == Decimal("-5")
+    assert m.long.trades == 0 and m.short.trades == 0
