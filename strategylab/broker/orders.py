@@ -22,7 +22,13 @@ class OrderKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Order:
-    """Ордер стратегии. Все поля обязательны: reduce_only — флаг безопасности."""
+    """Ордер стратегии. Поля 1-6 обязательны: reduce_only — флаг безопасности.
+
+    `expires_in_bars` — срок жизни заявки в барах (TIF): ордер, поданный при
+    внутреннем счётчике брокера seq=S, участвует в apply_bar S+1 … S+e и на входе
+    первого apply_bar с seq > S+e молча списывается без Fill. None — неограниченно
+    (прежнее поведение побайтно).
+    """
 
     side: Side
     kind: OrderKind
@@ -30,6 +36,7 @@ class Order:
     limit_price: Decimal | None
     stop_price: Decimal | None
     reduce_only: bool
+    expires_in_bars: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
