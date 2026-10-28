@@ -13,6 +13,14 @@ class LiquidationError(Exception):
     """Капитал обеспечения исчерпан: позиция закрыта принудительно, а не уходит в минус."""
 
 
+@dataclass(frozen=True, slots=True)
+class _Rest:
+    """Заявка в очереди брокера: сам ордер + seq бара подачи для TIF-списания."""
+
+    order: Order
+    born: int
+
+
 @dataclass(slots=True)
 class BrokerSimulator:
     """Брокер-симулятор: решает, исполнится ли заявка, по какой цене и с какой комиссией."""
@@ -20,7 +28,8 @@ class BrokerSimulator:
     costs: CostModel
     intrabar: IntrabarOrder
     _position: Position = field(default_factory=Position)
-    _pending: list[Order] = field(default_factory=list, repr=False)
+    _pending: list[_Rest] = field(default_factory=list, repr=False)
+    _seq: int = field(default=0, repr=False)
 
     @property
     def position(self) -> Position:
@@ -30,7 +39,7 @@ class BrokerSimulator:
     @property
     def pending_orders(self) -> list[Order]:
         """Заявки, ждущие исполнения. Копия: внутреннее состояние не изменяется."""
-        return list(self._pending)
+        return [rest.order for rest in self._pending]
 
     def submit(self, order: Order) -> None:
         if order.kind is OrderKind.STOP_MARKET and order.stop_price is None:
@@ -43,7 +52,7 @@ class BrokerSimulator:
             raise ValueError("reduce_only order is on the same side as the open position")
         if order.reduce_only and self._position.is_open:
             self._mirror_reduced(order)
-        self._pending.append(order)
+        self._pending.append(_Rest(order=order, born=self._seq))
 
     def _mirror_reduced(self, order: Order) -> None:
         """reduce-only заявка зеркалит свой уровень в позицию.
@@ -60,6 +69,13 @@ class BrokerSimulator:
             self._position.take_profit_qty = order.qty
 
     def apply_bar(self, bar: Bar) -> list[Fill]:
+        self._seq += 1
+        self._pending = [
+            rest
+            for rest in self._pending
+            if rest.order.expires_in_bars is None
+            or self._seq <= rest.born + rest.order.expires_in_bars
+        ]
         fills = self._apply_stops(bar)
         self._cancel_reduced()
         fills += self._apply_exits(bar)
@@ -79,27 +95,28 @@ class BrokerSimulator:
         её больше не могут и исполнением стали бы увеличением.
         """
         if not self._position.is_open:
-            self._pending = [order for order in self._pending if not order.reduce_only]
+            self._pending = [rest for rest in self._pending if not rest.order.reduce_only]
             return
         self._pending = [
-            order
-            for order in self._pending
-            if not order.reduce_only or order.side is not self._position.side
+            rest
+            for rest in self._pending
+            if not rest.order.reduce_only or rest.order.side is not self._position.side
         ]
 
     def _apply_stops(self, bar: Bar) -> list[Fill]:
         fills: list[Fill] = []
-        rest: list[Order] = []
-        for order in self._pending:
+        rest: list[_Rest] = []
+        for parked in self._pending:
+            order = parked.order
             if order.reduce_only:
-                rest.append(order)
+                rest.append(parked)
                 continue
             qty = self._effective_qty(order)
             if qty is None:
                 continue
             fill = self._stop_fill(order, bar, qty)
             if fill is None:
-                rest.append(order)
+                rest.append(parked)
             else:
                 fills.append(fill)
                 self._position.apply_fill(fill)
@@ -165,13 +182,13 @@ class BrokerSimulator:
         новой постановки цели.
         """
         self._pending = [
-            order
-            for order in self._pending
+            rest
+            for rest in self._pending
             if not (
-                order.reduce_only
-                and order.kind is OrderKind.LIMIT
-                and order.side is side
-                and order.limit_price == price
+                rest.order.reduce_only
+                and rest.order.kind is OrderKind.LIMIT
+                and rest.order.side is side
+                and rest.order.limit_price == price
             )
         ]
 
@@ -213,14 +230,15 @@ class BrokerSimulator:
 
     def _apply_limits(self, bar: Bar) -> list[Fill]:
         fills: list[Fill] = []
-        rest: list[Order] = []
-        for order in self._pending:
+        rest: list[_Rest] = []
+        for parked in self._pending:
+            order = parked.order
             qty = self._effective_qty(order)
             if qty is None:
                 continue
             fill = self._limit_fill(order, bar, qty)
             if fill is None:
-                rest.append(order)
+                rest.append(parked)
             else:
                 fills.append(fill)
                 self._position.apply_fill(fill)
@@ -229,14 +247,15 @@ class BrokerSimulator:
 
     def _apply_markets(self, bar: Bar) -> list[Fill]:
         fills: list[Fill] = []
-        rest: list[Order] = []
-        for order in self._pending:
+        rest: list[_Rest] = []
+        for parked in self._pending:
+            order = parked.order
             qty = self._effective_qty(order)
             if qty is None:
                 continue
             fill = self._market_fill(order, bar, qty)
             if fill is None:
-                rest.append(order)
+                rest.append(parked)
             else:
                 fills.append(fill)
                 self._position.apply_fill(fill)
