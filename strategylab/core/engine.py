@@ -162,8 +162,10 @@ def _close_window(
         ts=bar.ts, side=exit_side, price=price, qty=position.qty, fee=fee, reason="market"
     )
     sign = Decimal(1) if position.side is Side.BUY else Decimal(-1)
-    realized = (price - position.entry_price) * position.qty * sign - fee - position.entry_fee
+    # Цену входа захватываем до филла: Position обнуляет entry_price при сведении.
+    entry = position.entry_price
+    realized = (price - entry) * position.qty * sign - fee - position.entry_fee
     position.apply_fill(fill)
     metrics.record(fill, realized)
     if trade_log is not None:
-        trade_log.close(fill, position.entry_price, realized, Decimal("0"))
+        trade_log.close(fill, entry, realized, Decimal("0"))
