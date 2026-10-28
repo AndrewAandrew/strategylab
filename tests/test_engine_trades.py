@@ -125,7 +125,11 @@ def test_log_records_entry_exit_and_pnl_of_one_trade() -> None:
 
 
 def test_log_covers_the_window_close_with_market_reason() -> None:
-    """Сведение открытой позиции в конце окна тоже попадает в журнал."""
+    """Сведение открытой позиции в конце окна тоже попадает в журнал.
+
+    Цена входа в журнале — настоящая: Position обнуляет entry_price при
+    сведении, движок обязан захватить её до применения закрывающего филла.
+    """
     log = TradeLog()
     metrics = _run({0: [_market(Side.BUY, "1")]}, log)
 
@@ -134,6 +138,7 @@ def test_log_covers_the_window_close_with_market_reason() -> None:
     trade = trades[0]
     assert trade.exit_reason == "market"
     assert trade.exit_ts == START + 240
+    assert trade.entry_price == Decimal(str(START + 60)) * (Decimal(1) + SLIPPAGE)
     assert trade.pnl == metrics.net_pnl
 
 
