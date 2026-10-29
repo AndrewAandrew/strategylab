@@ -13,6 +13,10 @@ class LiquidationError(Exception):
     """Капитал обеспечения исчерпан: позиция закрыта принудительно, а не уходит в минус."""
 
 
+class MarginError(Exception):
+    """Заявка отклонена защитой счёта: marked equity исчерпан или маржи на заявку не хватает."""
+
+
 @dataclass(frozen=True, slots=True)
 class _Rest:
     """Заявка в очереди брокера: сам ордер + seq бара подачи для TIF-списания."""

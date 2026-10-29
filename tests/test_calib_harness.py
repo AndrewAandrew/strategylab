@@ -232,8 +232,19 @@ def _patch_bracket(harness: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_run_cell_matches_run_fork(harness: ModuleType, tmp_db: Path) -> None:
     end_ts = START_TS + 60 * 200
+    # Капитал 200 000 ≥ entry-notional (1 BTC по ~100 000): гейт подачи (фикс B/E)
+    # отклонил бы oversized-заявку при дефолтных 10 000. Одинаков с обеих сторон,
+    # поэтому метрики run_cell и run_fork совпадают (net_pnl/drawdown от капитала
+    # не зависят, equity = капитал + net_pnl).
     outcome = harness.run_cell(
-        tmp_db, SYMBOL, "buy_hold", {}, START_TS, end_ts, interval=Interval.MINUTE
+        tmp_db,
+        SYMBOL,
+        "buy_hold",
+        {},
+        START_TS,
+        end_ts,
+        capital=Decimal("200000"),
+        interval=Interval.MINUTE,
     )
     conn = connect(tmp_db)
     try:
@@ -252,7 +263,7 @@ def test_run_cell_matches_run_fork(harness: ModuleType, tmp_db: Path) -> None:
             spec,
             lambda: examples.build("buy_hold", {}),
             CostModel(),
-            Decimal("10000"),
+            Decimal("200000"),
             record_trades=True,
         )
     finally:
@@ -301,8 +312,16 @@ def test_outside_fit_raises(
 
 def test_metric_row_null_markers(harness: ModuleType, tmp_db_two_bars: Path) -> None:
     end_ts = START_TS + 60 * 2
+    # Капитал ≥ notional (1 BTC по 100 000), иначе гейт подачи отклонит заявку.
     outcome = harness.run_cell(
-        tmp_db_two_bars, SYMBOL, "buy_hold", {}, START_TS, end_ts, interval=Interval.MINUTE
+        tmp_db_two_bars,
+        SYMBOL,
+        "buy_hold",
+        {},
+        START_TS,
+        end_ts,
+        capital=Decimal("200000"),
+        interval=Interval.MINUTE,
     )
     pess_row, opt_row = harness.cell_rows(outcome, {}, [])
     fields = pess_row.split(",")
@@ -321,11 +340,30 @@ def test_metric_row_null_markers(harness: ModuleType, tmp_db_two_bars: Path) -> 
     assert opt_row.split(",")[0] == "optimistic"
 
 
-def test_metric_row_negative_equity(harness: ModuleType, tmp_db_two_bars: Path) -> None:
-    end_ts = START_TS + 60 * 2
-    # крошечный капитал: убыток одной сделки больше него — equity реально уходит в минус
+def test_metric_row_negative_equity(harness: ModuleType, tmp_path: Path) -> None:
+    # После гейта подачи (фикс B/E) oversized-заявка при крошечном капитале больше
+    # не проходит (требуемая маржа > marked equity → MarginError), поэтому минус
+    # достигается честным путём: заявка ровно по капиталу (маржа == marked, равенство
+    # проходит), филл после гэпа по цене в 1.5 раза выше и последующий крах цены.
+    # Ликвидация при leverage=1 не срабатывает (нужен low ≤ 0), убыток реализуется
+    # сводкой закрытия окна: realized ≈ −149.17 > капитала 100 → equity < 0.
+    end_ts = START_TS + 60 * 3
+    prices = (Decimal("100"), Decimal("150"), Decimal("1"))
+    bars = [
+        Bar(
+            ts=START_TS + 60 * index,
+            open=price,
+            high=price,
+            low=price,
+            close=price,
+            volume=Decimal("1"),
+        )
+        for index, price in enumerate(prices)
+    ]
+    db = tmp_path / "crash.db"
+    _make_db(db, bars, end_ts)
     outcome = harness.run_cell(
-        tmp_db_two_bars,
+        db,
         SYMBOL,
         "buy_hold",
         {},
@@ -357,8 +395,17 @@ def test_pending_snapshot_visible(
         ),
     )
     end_ts = START_TS + 60 * 200
+    # Капитал ≥ notional одной заявки (1 BTC по ~100 000): гейт подачи считает маржу
+    # как (|позиция| + qty заявки) × close / leverage, очередь заявок её не копит.
     outcome = harness.run_cell(
-        tmp_db, SYMBOL, "stub_limit", {}, START_TS, end_ts, interval=Interval.MINUTE
+        tmp_db,
+        SYMBOL,
+        "stub_limit",
+        {},
+        START_TS,
+        end_ts,
+        capital=Decimal("200000"),
+        interval=Interval.MINUTE,
     )
     pess, _opt = outcome.sides
     assert len(pess.pending_after) == 3
@@ -399,7 +446,9 @@ def test_cli_grid_writes_frozen_artifacts(
     harness.main(
         [
             str(tmp_db_saw), SYMBOL, str(START_TS), str(end_ts), "sma_cross",
-            "--param", "fast=1,2", "--param", "slow=3", "--interval", "1m", "--out", str(out),
+            "--param", "fast=1,2", "--param", "slow=3", "--interval", "1m",
+            # худшая маржа гейта при перевороте: (1 + 1) × 102 000 = 204 000
+            "--capital", "250000", "--out", str(out),
         ]
     )
     stem = f"sma_cross_{SYMBOL}_{START_TS}_{end_ts}"
@@ -450,7 +499,9 @@ def test_cli_rejection_and_double_costs(
     harness.main(
         [
             str(tmp_db_saw), SYMBOL, str(START_TS), str(end_ts), "sma_cross",
-            "--param", "fast=1,99", "--param", "slow=3", "--interval", "1m", "--out", str(out),
+            "--param", "fast=1,99", "--param", "slow=3", "--interval", "1m",
+            # капитал под гейт подачи: худшая маржа при перевороте 2 × 102 000
+            "--capital", "250000", "--out", str(out),
         ]
     )
     captured = capsys.readouterr()
@@ -481,7 +532,9 @@ def test_cli_rejection_and_double_costs(
     harness.main(
         [
             str(tmp_db_two_bars), SYMBOL, str(START_TS), str(end2), "buy_hold",
-            "--interval", "1m", "--double-costs", "--out", str(out3),
+            "--interval", "1m", "--double-costs",
+            # капитал ≥ notional (1 BTC по 100 000), иначе гейт подачи даст MarginError
+            "--capital", "250000", "--out", str(out3),
         ]
     )
     stem3 = f"buy_hold_{SYMBOL}_{START_TS}_{end2}_dc"

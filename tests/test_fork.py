@@ -17,6 +17,9 @@ START_TS = 1717200000  # 2024-06-01T00:00:00Z
 END_TS = 1717200300  # 2024-06-01T00:05:00Z
 MINUTE = 60
 QTY = Decimal("1")
+# Капитал покрывает entry-notional ~67 645 (1 BTC по close окна): гейт подачи
+# (фикс B/E) отклонил бы лимитку при нулевом equity. На net_pnl не влияет.
+CAPITAL = Decimal("100000")
 
 # Пять 1m-баров окна спеки §13.1: третий — реальный бар 2024-06-01 (O=67659.5,
 # H=67735.6, L=67650.0), стоп 67652.71 и цель 67733.95 лежат внутри него.
@@ -125,6 +128,7 @@ def _fork() -> Fork:
         spec=_spec(),
         strategy=make_fixed_position_strategy(entry=ENTRY, stop=STOP, take_profit=TARGET),
         costs=CostModel(),
+        capital=CAPITAL,
     )
 
 
@@ -137,7 +141,7 @@ def test_fork_diverges_when_stop_and_target_share_one_minute() -> None:
     ), strategy=make_fixed_position_strategy(
         entry=Decimal("67693.33"), stop=Decimal("67652.71"),
         take_profit=Decimal("67733.95"),
-    ), costs=CostModel())
+    ), costs=CostModel(), capital=CAPITAL)
     assert f.pessimistic.metrics.net_pnl < f.optimistic.metrics.net_pnl
     assert f.diverges(verdict=lambda r: r.metrics.net_pnl > 0) is True
 
@@ -183,6 +187,7 @@ def test_strategy_factory_is_called_once_per_branch() -> None:
         spec=_spec(),
         strategy=counting_factory,
         costs=CostModel(),
+        capital=CAPITAL,
     )
     assert calls == 2
 

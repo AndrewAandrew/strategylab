@@ -20,6 +20,9 @@ from strategylab.strategy.examples import BuyHoldStrategy
 COSTS = CostModel()
 TAKER_FEE = COSTS.taker_fee
 SLIPPAGE = COSTS.slippage
+# Стартовый капитал метрик: защита счёта при подаче (фикс B/E) не пропускает
+# заявки при нулевом equity — прогон без капитала больше не торгует.
+EQUITY = Decimal("10000")
 
 SYMBOL = "BTCUSDT"
 START = 1717200000  # 2024-06-01T00:00:00Z, граница часов
@@ -87,7 +90,7 @@ def test_order_from_bar_n_fills_on_bar_n_plus_one() -> None:
     bars = _bars(100, 5)
     feed = ListFeed(bars)
     broker = FillRecordingBroker(COSTS, IntrabarOrder.PESSIMISTIC)
-    metrics = Metrics()
+    metrics = Metrics(equity=EQUITY)
 
     Engine().run(feed, ScriptedStrategy({2: [_market(Side.BUY, "1")]}), broker, metrics)
 
@@ -105,7 +108,7 @@ def test_state_carries_signed_position_equity_and_bar_index() -> None:
     feed = ListFeed(bars)
     strategy = ScriptedStrategy({0: [_market(Side.BUY, "1")], 2: [_market(Side.SELL, "1")]})
     broker = BrokerSimulator(COSTS, IntrabarOrder.PESSIMISTIC)
-    metrics = Metrics()
+    metrics = Metrics(equity=EQUITY)
 
     Engine().run(feed, strategy, broker, metrics)
 
@@ -123,11 +126,11 @@ def test_state_carries_signed_position_equity_and_bar_index() -> None:
         Decimal("0"),
     ]
     assert [s.equity for s in strategy.states] == [
-        Decimal("0"),
-        Decimal("0"),
-        Decimal("0"),
-        realized,
-        realized,
+        EQUITY,
+        EQUITY,
+        EQUITY,
+        EQUITY + realized,
+        EQUITY + realized,
     ]
     assert metrics.trades == 1
     assert metrics.net_pnl == realized
@@ -138,7 +141,7 @@ def test_state_position_is_negative_for_a_short() -> None:
     feed = ListFeed(bars)
     strategy = ScriptedStrategy({0: [_market(Side.SELL, "1")]})
     broker = BrokerSimulator(COSTS, IntrabarOrder.PESSIMISTIC)
-    metrics = Metrics()
+    metrics = Metrics(equity=EQUITY)
 
     Engine().run(feed, strategy, broker, metrics)
 
@@ -158,7 +161,7 @@ def test_flip_realizes_only_the_closed_part() -> None:
     feed = ListFeed(bars)
     strategy = ScriptedStrategy({0: [_market(Side.BUY, "1")], 2: [_market(Side.SELL, "3")]})
     broker = BrokerSimulator(COSTS, IntrabarOrder.PESSIMISTIC)
-    metrics = Metrics()
+    metrics = Metrics(equity=EQUITY)
 
     Engine().run(feed, strategy, broker, metrics)
 
@@ -192,7 +195,7 @@ def test_open_position_is_closed_at_the_end_of_the_window(
     bars = _bars(100, 4)
     feed = ListFeed(bars)
     broker = BrokerSimulator(COSTS, IntrabarOrder.PESSIMISTIC)
-    metrics = Metrics()
+    metrics = Metrics(equity=EQUITY)
     applied: list[Fill] = []
     original = Position.apply_fill
 
@@ -221,7 +224,7 @@ def test_signal_on_the_last_bar_does_not_execute() -> None:
     bars = _bars(100, 3)
     feed = ListFeed(bars)
     broker = BrokerSimulator(COSTS, IntrabarOrder.PESSIMISTIC)
-    metrics = Metrics()
+    metrics = Metrics(equity=EQUITY)
     order = _market(Side.BUY, "1")
     strategy = ScriptedStrategy({2: [order]})
 

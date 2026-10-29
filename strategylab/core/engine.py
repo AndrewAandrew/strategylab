@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from strategylab.broker.orders import Fill, Side
-from strategylab.broker.sim import BrokerSimulator
+from strategylab.broker.orders import Fill, Order, Side
+from strategylab.broker.sim import BrokerSimulator, MarginError
 from strategylab.core.bars import Bar
 from strategylab.core.feed import BarFeed
 from strategylab.core.metrics import Metrics
@@ -18,6 +18,13 @@ class Engine:
     `strategy.on_bar(bar, state)`, затем `broker.submit(...)` для всех ордеров
     стратегии. Это и есть правило «сигнал действует на следующий бар»: ордер,
     поданный на баре N, исполняется не раньше `apply_bar` бара N+1.
+
+    Подачу ордеров охраняет защита счёта (`_guard_submit`, фикс дефектов B/E):
+    перед `broker.submit` движок проверяет marked equity (реализованный капитал
+    метрик плюс нереализованный pnl позиции по close текущего бара) и требуемую
+    маржу заявки. Reduce-only проходит всегда — счёт обязан иметь возможность
+    закрыться; остальное при неположительном marked equity или нехватке маржи
+    отклоняется явным `MarginError`, а не исполняется молча.
 
     Реализованный pnl считает движок, а не метрики и не брокер (решение 3):
     снимок позиции до `apply_bar`, снимок после; закрытая часть даёт
@@ -74,6 +81,7 @@ class Engine:
                 bar_index=index,
             )
             for order in strategy.on_bar(bar, state):
+                _guard_submit(broker, metrics, bar, order)
                 broker.submit(order)
             if index == last_index:
                 _close_window(broker, metrics, bar, trade_log)
@@ -86,6 +94,50 @@ def _signed_position(broker: BrokerSimulator) -> Decimal:
     if qty == 0:
         return Decimal("0")
     return qty if broker.position.side is Side.BUY else -qty
+
+
+def _guard_submit(broker: BrokerSimulator, metrics: Metrics, bar: Bar, order: Order) -> None:
+    """Защита счёта перед подачей заявки: marked equity и требуемая маржа (фикс B/E).
+
+    marked equity — реализованный капитал метрик плюс нереализованный pnl
+    открытой позиции по close подающего бара:
+    `metrics.equity + signed_qty × (bar.close − position.entry_price)`,
+    где signed_qty — знаковая позиция из `_signed_position`. Основание:
+    `metrics.equity` — ТОЛЬКО реализованный pnl (см. metrics.py:16–26), поэтому
+    гейт на нём одном был бы беззубым для нереализованной просадки (дефект E:
+    счёт тонет в open-убытке, а realised до закрытий положителен).
+
+    Reduce-only заявки проходят ВСЕГДА: счёт обязан иметь возможность закрыться
+    даже при отрицательном marked equity. Остальные отклоняются явным
+    `MarginError`, если marked ≤ 0 (account-equity гейт) либо если требуемая
+    маржа `(|position.qty| × bar.close + order.qty × bar.close) / leverage`
+    строго больше marked (margin/notional гейт); равенство ПРОХОДИТ —
+    отклоняем только строгое превышение. Идиома margin = notional / leverage —
+    как в `_apply_liquidation` (sim.py). leverage берётся из CostModel брокера.
+
+    Notional считается по close ПОДАЮЩЕГО бара для всех видов ордеров
+    единообразно: для LIMIT это сознательная консервативная аппроксимация —
+    лимитная цена дала бы меньший notional, но заявка обязана быть обеспечена
+    при любой цене исполнения. Flat-guard: у плоской позиции signed_qty = 0,
+    слагаемое зануляется и entry_price (0 или мусор) в арифметику не попадает.
+    """
+    if order.reduce_only:
+        return
+    position = broker.position
+    signed_qty = _signed_position(broker)
+    marked = metrics.equity
+    if signed_qty != 0:
+        marked += signed_qty * (bar.close - position.entry_price)
+    if marked <= 0:
+        raise MarginError(
+            f"order rejected: marked equity {marked} is not positive "
+            f"(reduce-only orders are the only way to close)"
+        )
+    required = (position.qty * bar.close + order.qty * bar.close) / broker.costs.leverage
+    if required > marked:
+        raise MarginError(
+            f"order rejected: required margin {required} exceeds marked equity {marked}"
+        )
 
 
 def _record_realized(
