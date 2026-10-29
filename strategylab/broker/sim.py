@@ -30,6 +30,7 @@ class BrokerSimulator:
     _position: Position = field(default_factory=Position)
     _pending: list[_Rest] = field(default_factory=list, repr=False)
     _seq: int = field(default=0, repr=False)
+    _window_cancelled: int = field(default=0, repr=False)
 
     @property
     def position(self) -> Position:
@@ -40,6 +41,23 @@ class BrokerSimulator:
     def pending_orders(self) -> list[Order]:
         """Заявки, ждущие исполнения. Копия: внутреннее состояние не изменяется."""
         return [rest.order for rest in self._pending]
+
+    @property
+    def window_cancelled(self) -> int:
+        """Сколько заявок снял `cancel_all`: учёт конца окна, наблюдаемый после run()."""
+        return self._window_cancelled
+
+    def cancel_all(self) -> list[Order]:
+        """Снять все ожидающие заявки и вернуть их: очередь не переживает конец окна (C-3).
+
+        Счётчик снятых накапливается в `window_cancelled` — учётное тождество
+        `submits − fills − expired − window_cancelled == 0` проверяется после
+        run() без чтения очереди.
+        """
+        cancelled = [rest.order for rest in self._pending]
+        self._window_cancelled += len(cancelled)
+        self._pending = []
+        return cancelled
 
     def submit(self, order: Order) -> None:
         if order.kind is OrderKind.STOP_MARKET and order.stop_price is None:

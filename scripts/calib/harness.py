@@ -3,7 +3,9 @@
 Собирает `Engine + BrokerSimulator + TradeLog` напрямую — как `fork._run_once`,
 но наружу отдаёт журнал сделок, снимок живой очереди брокера после последнего
 бара и метрики обеих вилок. `run_fork` при этом не трогает: харнесс обязан
-видеть `pending_orders`, чего `run_fork` не отдаёт (design §10).
+видеть `pending_orders`, чего `run_fork` не отдаёт (design §10). С фиксом C-3
+снимок очереди всегда пуст (конец окна снимает её), а учёт конца окна несёт
+счётчик `window_cancelled` — он уходит в учётную строку report ячейки.
 
 CSV-конвенция (null-маркеры, grid-хелперы, формат чисел) наследуется от
 scripts/sweep.py — модуль подгружается по пути файла, не копируется.
@@ -102,6 +104,7 @@ class ForkSide:
     metrics: Metrics
     trades: tuple[Trade, ...]
     pending_after: tuple[Order, ...]
+    window_cancelled: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,7 +154,9 @@ def _run_side(
     metrics = Engine().run(
         feed, build(strategy, dict(params)), broker, Metrics(equity=capital), log
     )
-    return ForkSide(intrabar, metrics, log.trades, tuple(broker.pending_orders))
+    return ForkSide(
+        intrabar, metrics, log.trades, tuple(broker.pending_orders), broker.window_cancelled
+    )
 
 
 def run_cell(
@@ -402,6 +407,9 @@ def _run_grid(args: argparse.Namespace) -> None:
         report_lines.append(
             f"# cell: spec_version={outcome.spec_version} params: {combination_text or '(нет)'}"
         )
+        # Учёт конца окна (C-3): очередь снята до сведения, pending-колонки csv
+        # всегда 0 — инвариант submits − fills − expired − window_cancelled == 0.
+        report_lines.append(f"# window_cancelled: {pess.window_cancelled}")
         report_lines.extend(report.to_text().splitlines())
         report_lines.append("")
 
