@@ -7,6 +7,7 @@ from decimal import Decimal
 from strategylab.broker.orders import Order, OrderKind, Side
 from strategylab.core.bars import Bar
 from strategylab.strategy.base import Strategy, StrategyState
+from strategylab.strategy.dca_grid import DcaGridStrategy
 from strategylab.strategy.flat_keltner import FlatKeltnerStrategy
 from strategylab.strategy.limit_pullback import LimitPullbackStrategy
 from strategylab.strategy.sweep_liquidity import SweepLiquidityStrategy
@@ -82,6 +83,7 @@ STRATEGY_CLASSES: dict[str, type[Strategy]] = {
     "trend_pullback": TrendPullbackStrategy,
     "sweep_liquidity": SweepLiquidityStrategy,
     "limit_pullback": LimitPullbackStrategy,
+    "dca_grid": DcaGridStrategy,
 }
 
 
@@ -99,6 +101,8 @@ def build(name: str, params: Mapping[str, Decimal]) -> Strategy:
         return SweepLiquidityStrategy.from_params(params)
     if name == "limit_pullback":
         return LimitPullbackStrategy.from_params(params)
+    if name == "dca_grid":
+        return DcaGridStrategy.from_params(params)
     raise UnknownStrategy(name)
 
 
