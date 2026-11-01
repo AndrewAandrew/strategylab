@@ -145,8 +145,8 @@ def tmp_db_unzoned(tmp_path: Path) -> Path:
 class _LimitStubStrategy:
     """Две далеко-лимитки на баре 0 (неисполнимы) + MARKET на ПОСЛЕДНЕМ баре.
 
-    Снимок после последней заявки пинит V4.2-семантику pending_other, а
-    несимметричные счётчики (2 vs 1) убивают перестановку колонок.
+    С фиксом C-3 конец окна снимает всю очередь: все три заявки уходят в
+    `window_cancelled`, а pending-колонки csv читаются нулями.
     """
 
     name = "stub_limit"
@@ -162,7 +162,7 @@ class _LimitStubStrategy:
         orders: list[Order] = []
         if not self._limit_done:
             self._limit_done = True
-            # две entry-лимитки: счётчик limit_buy должен быть 2, а не симметричен other
+            # две entry-лимитки: вместе с MARKET последнего бара — window_cancelled == 3
             orders.extend(
                 (
                     Order(Side.BUY, OrderKind.LIMIT, Decimal("1"), Decimal("0.0001"), None, False),
@@ -360,11 +360,12 @@ def test_pending_snapshot_visible(
     outcome = harness.run_cell(
         tmp_db, SYMBOL, "stub_limit", {}, START_TS, end_ts, interval=Interval.MINUTE
     )
-    pess, _opt = outcome.sides
-    assert len(pess.pending_after) == 3
-    assert [order.kind for order in pess.pending_after] == [
-        OrderKind.LIMIT, OrderKind.LIMIT, OrderKind.MARKET
-    ]
+    pess, opt = outcome.sides
+    # C-3: конец окна снимает очередь до сведения — снимок пуст, сняты все три
+    # заявки (две далеко-лимитки бара 0 + MARKET последнего бара).
+    assert pess.pending_after == ()
+    assert pess.window_cancelled == 3
+    assert opt.window_cancelled == 3  # учёт конца окна совпадает на обеих вилках
     assert pess.trades == ()
     lines = harness.journal_lines(pess, outcome.spec_version, "")
     assert lines[0] == (
@@ -377,9 +378,8 @@ def test_pending_snapshot_visible(
     assert fields[4] == "null"  # win_rate при нуле сделок (design §10)
     assert fields[8] == "null"  # profit_factor
     assert fields[9] == "null"  # sharpe
-    assert fields[10] == "2"  # pending_limit_buy — обе entry-лимитки пережили окно
-    # pending_other == 1 доказывает снимок ПОСЛЕ submit последнего бара (V4.2)
-    assert fields[11] == "1"
+    assert fields[10] == "0"  # pending_limit_buy — с C-3 всегда 0: очередь снята
+    assert fields[11] == "0"  # pending_other — всегда 0: очередь не переживает окно
 
 
 def test_write_csv_utf8(harness: ModuleType, tmp_path: Path) -> None:
@@ -434,6 +434,7 @@ def test_cli_grid_writes_frozen_artifacts(
 
     report = (out / f"{stem}_report_p.txt").read_text(encoding="utf-8")
     assert report.count("# cell: spec_version=") == 2
+    assert report.count("# window_cancelled: ") == 2  # C-3: учётная строка на каждую ячейку
     assert "комбинаций: 2" in capsys.readouterr().out
 
 
@@ -538,11 +539,13 @@ def test_cli_reduce_only_pending_split(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """reduce-only LIMIT в финальной очереди — pending_other, НЕ limit_buy (V4.2).
+    """Конец окна снимает reduce-only bracket: pending-колонки нулевые, учёт — в report (C-3).
 
     Узкий бар 99-101 не трогает ни TP 105, ни STOP 95: обе reduce-only заявки
-    переживают принудительное закрытие окна (двинок не чистит очередь) и должны
-    попасть в pending_other.
+    снимаются на конце окна вместе с очередью — до фикса C-3 они переживали окно
+    и попадали в pending_other. Позиция по-прежнему закрыта сводкой
+    (exit_reason=market), а число снятых заявок уходит в учётную строку
+    `# window_cancelled:` отчёта report_p.txt.
     """
     _patch_bracket(harness, monkeypatch)
     db = _make_bracket_db(tmp_path, "nar.db", wide=False)
@@ -559,8 +562,10 @@ def test_cli_reduce_only_pending_split(
         if line.startswith("pessimistic,")
     )
     fields = row.split(",")
-    assert fields[10] == "0"  # pending_limit_buy: entry-лимиток нет
-    assert fields[11] == "2"  # pending_other: TP-LIMIT + STOP_MARKET, обе reduce-only
+    assert fields[10] == "0"  # pending_limit_buy: с C-3 всегда 0
+    assert fields[11] == "0"  # pending_other: TP-LIMIT + STOP_MARKET сняты на конце окна
+    report = (out / f"{stem}_report_p.txt").read_text(encoding="utf-8")
+    assert "# window_cancelled: 2" in report  # обе reduce-only заявки
     journal = (out / f"{stem}_journal_p.csv").read_text(encoding="utf-8").splitlines()
     assert len(journal) == 2
     assert journal[1].endswith(",market")  # закрыто сводкой окна

@@ -227,7 +227,9 @@ def test_signal_on_the_last_bar_does_not_execute() -> None:
 
     Engine().run(feed, strategy, broker, metrics)
 
-    assert broker.pending_orders == [order]
+    # C-3: заявка последнего бара не исполняется и не переживает окно — снята.
+    assert broker.pending_orders == []
+    assert broker.window_cancelled == 1
     assert metrics.trades == 0
     assert metrics.net_pnl == Decimal("0")
     assert not broker.position.is_open
