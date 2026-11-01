@@ -423,3 +423,17 @@ origin/spec01-two-sided-momentum (463fb17), origin/diag/spec01-exploration (f14c
   ЕСЛИ ИНСТРУМЕНТ ВОССТАНОВИТ ЕГО — не коммитить молча, сверяться с этим записи.
   Секретов в лидгере не найдено (grep api/key/token/Bearer — пусто). Статус чист,
   local==origin ca6c841.
+## 2026-11-01 — раунд 5: заморозка пререгистрации (owner «ок»)
+
+- `round5-preregistration.md` заморожен: к5-1 skip-фильтр (fund_floor) — единственное
+  новое правило; к5-2 lev=20; к5-3 risk_frac=0.005 (линия 0.025%); к5-4 первичный floor
+  0.00025; к5-5 диагностики J-wide 0.001 / S-wide 0.0015 / J-tp2, бюджет ≤27 из 36;
+  к5-6 skipped-счётчик не в ядро; к5-7 графики view-only. §11: база rho = close подающего
+  бара; LIQUIDATED_RUN_DEAD = провал правил 1/3. Черновик заменён указателем.
+- Builder-check (свежий субагент): арифметика §3 подтверждена; Q1 (база rho для S) и
+  Q2 (хвост ликвидации / артефакты) закрыты в тексте §1/§3/§11 ДО freeze.
+- Маршрут: один имплементатор `feat/fundability-filter` (worktree Temp/opencode/wt_fundability
+  от b880bf9) → fresh-eyes ревью братом-mimo (`reviews/review-fundability.md`) → merge с
+  полным гейтом основного репо ДО push → сетка 12 первичных + ≤15 диагностик
+  братом-замерщиком (изолированный вызов на ячейку, методология ДО чисел, R-next-1) →
+  после публикации чисел — графики ведущего (HTML/SVG, browser preview).
