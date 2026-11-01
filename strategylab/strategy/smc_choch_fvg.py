@@ -39,7 +39,8 @@ close_{S+1}» выполняется ядром нативно).
 Entry: LIMIT BUY по mid = (H(t−2)+L(t))/2 (середина FVG),
 expires_in_bars = ttl_bars (default 60); qty = equity·risk_frac/R,
 R = mid − SL, SL = min(L(t−2..t))·0.9995 (буфер 0.05%). R <= 0,
-equity <= 0 или позиция не флэт — не торговать. Шорт-зеркало: SELL LIMIT,
+equity <= 0, R/close(бара S) < fund_floor (раунд 5, §1 и решение 10) или
+позиция не флэт — не торговать. Шорт-зеркало: SELL LIMIT,
 mid = (L(t−2)+H(t))/2, SL = max(H(t−2..t))·1.0005.
 
 Исполнение входа (entry_pending, позиция != 0) — брекет на баре исполнения:
@@ -130,6 +131,22 @@ MARKET reduce_only. Позиция флэт — состояние сделки 
    Все выходы reduce_only, объём — фактический остаток позиции; новых
    входов, пока entry_pending или позиция открыта, нет (одна лимитка на
    сделку, §6).
+
+10. Fundability-skip (раунд 5, §1 — единственное новое правило): перед подачей
+    entry-лимитки на баре S считается ``rho = R / close(бара S)`` — R заморожен
+    с бара FVG, знаменатель же ТА ЖЕ цена подающего бара, по которой
+    ``_guard_submit`` (engine.py:138) считает notional лимитки. Это НЕ mid и НЕ
+    база бара FVG: после пробоя close_S стоит выше mid, поэтому close-база
+    строже mid-базы и отсекает дополнительные сигналы (builder-check Q1 — при
+    отлёте close_S над mid required может превысить marked, тот самый MarginError,
+    который харнесс не ловит). При ``rho < fund_floor`` сигнал пропускается
+    целиком: ни одной заявки, торговое состояние не трогается (машина остаётся
+    в сброшенном флэте), пара CHoCH+FVG расходуется по обычному пути отказа и
+    следующая пара обрабатывается как обычно. Сравнение строгое:
+    ``rho == fund_floor`` торгуется (§11: на линии гейт проходит по равенству).
+    Дефолт ``Decimal("0.00025")`` = r/lev при risk_frac 0.005 и leverage 20
+    (кибы к5-3, к5-4) — MARGIN_CRASH на входах исключён по построению (§3).
+    Брекет, TP1, безубыток, runner-выходы и hard-cap не затронуты.
 """
 
 from __future__ import annotations
@@ -191,6 +208,8 @@ class SmcChochFvgStrategy:
     Сигнал решается на закрытии бара S = max(бар CHoCH, бар FVG) + 2, вход —
     одна LIMIT-заявка с TIF, выходы — reduce_only-брекет (SL, TP1 половина),
     безубыток после TP1, затем runner: обратный CHoCH или hard-cap.
+    Пары с ``R / close(бара S) < fund_floor`` пропускаются — ни одной заявки
+    (раунд 5, §1, решение 10).
     """
 
     name = "smc_choch_fvg"
@@ -200,6 +219,7 @@ class SmcChochFvgStrategy:
         "risk_frac",
         "tp_mult",
         "max_hold",
+        "fund_floor",
     )
 
     def __init__(
@@ -208,6 +228,7 @@ class SmcChochFvgStrategy:
         risk_frac: Decimal = Decimal("0.01"),
         tp_mult: Decimal = Decimal("4"),
         max_hold: Decimal = Decimal("240"),
+        fund_floor: Decimal = Decimal("0.00025"),
     ) -> None:
         self._ttl = positive_int(ttl_bars, "ttl_bars")
         self._risk_frac = positive(risk_frac, "risk_frac")
@@ -215,6 +236,7 @@ class SmcChochFvgStrategy:
             raise ValueError(f"risk_frac должен быть <= 1, получено {risk_frac}")
         self._tp_mult = positive(tp_mult, "tp_mult")
         self._max_hold = positive_int(max_hold, "max_hold")
+        self._fund_floor = positive(fund_floor, "fund_floor")
 
         # Структурный слой: два списка экстремумов (§6) + производные.
         self._cand: list[Extreme] = []
@@ -335,7 +357,7 @@ class SmcChochFvgStrategy:
             and not self._entry_pending
             and self._bracket_qty is None
         ):
-            entry = self._entry_order(state)
+            entry = self._entry_order(bar, state)
             if entry is not None:
                 orders.append(entry)
         return orders
@@ -437,7 +459,7 @@ class SmcChochFvgStrategy:
 
     # -- торговый слой ----------------------------------------------------------
 
-    def _entry_order(self, state: StrategyState) -> Order | None:
+    def _entry_order(self, bar: Bar, state: StrategyState) -> Order | None:
         """Лимитка в середину FVG: qty = equity·risk_frac/R; уровни заморожены.
 
         Пара расходуется при совпадении S (S — единственный бар пары): после
@@ -445,6 +467,10 @@ class SmcChochFvgStrategy:
         пары. Отказ: R <= 0 (для корректного FVG невозможно: mid > H(t−2) >=
         min lows окна > SL с буфером — оставлено как защита от вырожденных
         данных) или equity <= 0 (капитала нет — как во всём пакете).
+        Fundability-skip (§1 раунда 5, решение 10): ``rho = R / close(бара S)``
+        ниже ``fund_floor`` — тот же путь отказа: ни одной заявки, торговое
+        состояние не трогается, следующая пара обрабатывается обычно.
+        Сравнение строгое: ``rho == fund_floor`` торгуется.
         """
         index = state.bar_index
         long_sig = self._fresh_pair(self._bull_choch_bar, self._bull_fvg, index)
@@ -461,6 +487,8 @@ class SmcChochFvgStrategy:
             self._bear_choch_bar = None
             self._bear_fvg = None
         if fvg is None or fvg.risk <= 0 or state.equity <= 0:
+            return None
+        if fvg.risk / bar.close < self._fund_floor:
             return None
         side = Side.BUY if long_sig else Side.SELL
         self._entry_pending = True
