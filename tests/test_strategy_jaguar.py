@@ -193,8 +193,9 @@ def test_defaults_match_preregistration_k1() -> None:
         "risk_frac": RISK_FRAC,
         "tp_mult": TP_MULT,
         "fund_floor": FUND_FLOOR,
+        "be_mult": None,
     }
-    assert JaguarEmaStrategy.PARAM_NAMES == ("risk_frac", "tp_mult", "fund_floor")
+    assert JaguarEmaStrategy.PARAM_NAMES == ("risk_frac", "tp_mult", "fund_floor", "be_mult")
 
 
 def test_from_params_rejects_unknown_and_passes_known() -> None:
@@ -210,6 +211,8 @@ def test_invalid_params_are_rejected() -> None:
         ("risk_frac", Decimal("-1")),
         ("risk_frac", Decimal("1.5")),
         ("tp_mult", ZERO),
+        ("be_mult", ZERO),
+        ("be_mult", Decimal("-1")),
     ]:
         with pytest.raises(ValueError, match=name):
             build("jaguar_ema", {name: value})
@@ -554,6 +557,157 @@ def test_short_engine_lifecycle_tp1_then_trailing_stop() -> None:
     assert take.side is Side.BUY and take.qty == entry_qty / Decimal("2")
     assert stop.side is Side.BUY and stop.qty == entry_qty / Decimal("2")
     assert stop.price == _oracle_emas(bars)[0][62] * (Decimal(1) + SLIPPAGE)
+    assert not broker.position.is_open
+    assert broker.pending_orders == []
+
+
+# --- Безубыточный рэтчет до TP1 (раунд 7, к7-2) -------------------------------
+
+
+def _be_long_bars() -> list[Bar]:
+    """Ступенька + ралли 175 (порог 1R=170.25 probит, TP1 176.87 не задет)."""
+    rally = _mk(62, "170", "175", "169", "175")
+    higher = _mk(63, "175", "176", "174", "176")
+    return _long_series() + [rally, higher]
+
+
+def test_be_off_rally_before_tp1_moves_nothing() -> None:
+    """be_mult=None (раунд 6 побайтно): close выше 1R до TP1 — ни одной заявки."""
+    full = _long_series()
+    _f_values, s_values = _oracle_emas(full)
+    entry_qty = EQUITY * RISK_FRAC / (SIGNAL_LONG.close - s_values[60])
+
+    result = _drive(
+        JaguarEmaStrategy(), _be_long_bars(), {61: entry_qty, 62: entry_qty, 63: entry_qty}
+    )
+
+    assert sorted(result) == [60, 61]  # только вход и брекет: стоп не трогали
+
+
+def test_be_ratchet_moves_stop_once_to_entry_plus_buffer_long() -> None:
+    """к7-2 лонг: close >= entry + be·R — единственный перенос стопа на entry·1.0002."""
+    full = _long_series()
+    _f_values, s_values = _oracle_emas(full)
+    entry_qty = EQUITY * RISK_FRAC / (SIGNAL_LONG.close - s_values[60])
+    level = FILL_LONG.close * (Decimal("1") + Decimal("0.0002"))
+
+    strategy = JaguarEmaStrategy(be_mult=Decimal("1.0"))
+    result = _drive(
+        strategy, _be_long_bars(), {61: entry_qty, 62: entry_qty, 63: entry_qty}
+    )
+
+    assert sorted(result) == [60, 61, 62]
+    ratchet = result[62][0]
+    assert ratchet.side is Side.SELL and ratchet.kind is OrderKind.STOP_MARKET
+    assert ratchet.reduce_only is True and ratchet.qty == entry_qty
+    assert ratchet.stop_price == level > s_values[60]
+    assert strategy._stop == level and strategy._be_done is True
+    assert strategy._be_base == FILL_LONG.close  # база — оценка исполнения (решение 4)
+
+
+def test_be_ratchet_short_mirror_moves_stop_down_once() -> None:
+    """к7-2 зеркало шорта: close <= entry − be·R — BUY-стоп на entry·(1−0.0002)."""
+    base_bars = _short_series()
+    _f_values, s_values = _oracle_emas(base_bars)
+    frozen = s_values[60]
+    entry_qty = EQUITY * RISK_FRAC / (frozen - SIGNAL_SHORT.close)
+    trigger = FILL_SHORT.close - (frozen - FILL_SHORT.close)  # порог 1R
+    assert trigger < FILL_SHORT.close
+    ratchet_bar = Bar(
+        ts=START + FIVE_MIN * 62,
+        open=Decimal("140"),
+        high=Decimal("140.5"),
+        low=trigger - Decimal("0.5"),
+        close=trigger,
+        volume=Decimal("1"),
+    )
+    bars = base_bars + [ratchet_bar]
+    _f2, s2 = _oracle_emas(bars)
+    assert bars[62].close < s2[62]  # full-exit не сработал: выход шорта был бы close > slow
+
+    level = FILL_SHORT.close * (Decimal("1") - Decimal("0.0002"))
+    strategy = JaguarEmaStrategy(be_mult=Decimal("1.0"))
+    result = _drive(strategy, bars, {61: -entry_qty, 62: -entry_qty})
+
+    assert sorted(result) == [60, 61, 62]
+    ratchet = result[62][0]
+    assert ratchet.side is Side.BUY and ratchet.kind is OrderKind.STOP_MARKET
+    assert ratchet.reduce_only is True and ratchet.qty == entry_qty
+    assert ratchet.stop_price == level < frozen
+
+
+def test_be_ratchet_never_repeats_on_higher_closes() -> None:
+    """Однократность: третий бар ещё выше порога — новых заявок нет (be_done)."""
+    full = _long_series()
+    _f_values, s_values = _oracle_emas(full)
+    entry_qty = EQUITY * RISK_FRAC / (SIGNAL_LONG.close - s_values[60])
+
+    strategy = JaguarEmaStrategy(be_mult=Decimal("1.0"))
+    result = _drive(
+        strategy, _be_long_bars(), {61: entry_qty, 62: entry_qty, 63: entry_qty}
+    )
+
+    assert sorted(result) == [60, 61, 62]  # 63: close ещё выше — рэтчет не повторяется
+    assert strategy._be_done is True
+
+
+def test_be_state_resets_on_flat() -> None:
+    """Флэт-бар сбрасывает рэтчет: у следующей сделки свой однократный перенос."""
+    full = _long_series()
+    _f_values, s_values = _oracle_emas(full)
+    entry_qty = EQUITY * RISK_FRAC / (SIGNAL_LONG.close - s_values[60])
+    flat = _mk(64, "176", "176.5", "175.5", "176")
+
+    strategy = JaguarEmaStrategy(be_mult=Decimal("1.0"))
+    _drive(strategy, _be_long_bars() + [flat], {61: entry_qty, 62: entry_qty, 63: ZERO})
+
+    assert strategy._be_base is None and strategy._be_risk is None
+    assert strategy._be_done is False and strategy._stop is None
+
+
+def test_be_skipped_when_tp1_already_happened() -> None:
+    """после TP1 правит EMA13-трейлинг: рэтчет не подаёт свой уровень (§к7-2 «до TP1»)."""
+    full = _long_series()
+    _f_values, s_values = _oracle_emas(full)
+    entry_qty = EQUITY * RISK_FRAC / (SIGNAL_LONG.close - s_values[60])
+    half = entry_qty / Decimal("2")
+    tp_bar = _mk(62, "170", "180", "170", "175")  # TP1 в хаях: позиция уменьшилась
+    bars = full + [tp_bar]
+
+    expected_fast, _ = _oracle_emas(bars)
+    strategy = JaguarEmaStrategy(be_mult=Decimal("1.0"))
+    result = _drive(strategy, bars, {61: entry_qty, 62: half})
+
+    trail = result[62][0]
+    assert trail.kind is OrderKind.STOP_MARKET and trail.qty == half
+    assert trail.stop_price == expected_fast[62]  # EMA13, не entry·1.0002
+
+
+def test_be_engine_ratcheted_stop_takes_the_gap_not_the_old_sl() -> None:
+    """Сквозь движок: ралли над 1R без TP1 -> рэтчет -> гэп вниз исполняет НОВЫЙ
+    стоп (потеря ~буфер), старый SL 143.75 не зовёт второй выход."""
+    rally = _mk(62, "170", "175", "169", "175")  # TP1 176.875 не задет
+    gap_down = _mk(63, "150", "151", "149", "150")
+    bars = _long_series() + [rally, gap_down]
+
+    broker = _RecordingBroker()
+    Engine().run(
+        _ListFeed(bars),
+        JaguarEmaStrategy(be_mult=Decimal("1.0")),
+        broker,
+        Metrics(equity=EQUITY),
+    )
+    fills = list(broker.fills)
+
+    full = _long_series()
+    _f_values, s_values = _oracle_emas(full)
+    entry_qty = EQUITY * RISK_FRAC / (SIGNAL_LONG.close - s_values[60])
+
+    assert [fill.reason for fill in fills] == ["market", "stop"]
+    entry, stop = fills
+    assert entry.qty == entry_qty
+    assert stop.qty == entry_qty  # TP1 не было — полный остаток
+    assert stop.price == Decimal("150") * (Decimal("1") - SLIPPAGE)  # гэп, не 143.75
     assert not broker.position.is_open
     assert broker.pending_orders == []
 
