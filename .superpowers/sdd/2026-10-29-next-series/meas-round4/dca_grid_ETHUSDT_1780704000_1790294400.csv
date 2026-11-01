@@ -1,0 +1,14 @@
+strategy: dca_grid
+symbol: ETHUSDT
+window: [1780704000, 1790294400)
+capital: 10000
+grid: step=0.02; layers=4
+spec_version (база): 0dfc1ed85a00
+zones_used: fit
+costs: taker_fee=0.0006 maker_fee=0.0002 slippage=0.0005 leverage=10
+touches: holdout=0, live=0
+intrabar: both (строки помечены колонкой fork)
+отклонено: 0
+fork,spec_version,step,layers,trades,wins,win_rate,net_pnl,equity,max_drawdown,profit_factor,sharpe,pending_limit_buy,pending_other
+pessimistic,d0aa8c638ce6,0.02,4,1,1,1,3340.1891652690,13340.1891652690,0,null,null,0,0
+optimistic,d0aa8c638ce6,0.02,4,1,1,1,3340.1891652690,13340.1891652690,0,null,null,0,0

@@ -1,0 +1,3126 @@
+# Review package: f4387d5..77a7c7d
+
+## Commits
+77a7c7d feat: gate evaluation for two-sided momentum and spec 01 report
+f2cc03e feat: register two_sided_momentum and publish sides in sweep
+72096bf feat: trailing atr stop on both sides
+3dce9d3 feat: reversing breakout on opposite signal
+83254ba feat: short side and mirrored atr stop
+5086523 feat: long breakout entry with atr stop bracket
+828380d feat: donchian and atr core of two-sided momentum strategy
+8b303a7 fix: superseded mirrored stops leave the pending queue
+d785150 feat: report publishes long and short metrics separately
+8f52506 feat: engine attributes realized pnl to position side
+50e9504 feat: split trade metrics by position side
+
+## Files changed
+ scripts/gates.py                                   | 331 ++++++++++
+ scripts/sweep.py                                   |  15 +
+ ...321\202_spec_01_two_sided_momentum_20261027.md" | 135 ++++
+ strategylab/broker/sim.py                          |  15 +
+ strategylab/core/engine.py                         |   7 +-
+ strategylab/core/metrics.py                        |  71 +-
+ strategylab/report/report.py                       |  12 +
+ strategylab/strategy/examples.py                   |   4 +
+ strategylab/strategy/two_sided_momentum.py         | 372 +++++++++++
+ tests/test_broker_sim.py                           |  63 ++
+ tests/test_cli.py                                  |  26 +-
+ tests/test_engine_trades.py                        |  28 +
+ tests/test_examples.py                             |   5 +
+ tests/test_gates.py                                | 426 ++++++++++++
+ tests/test_metrics.py                              |  32 +
+ tests/test_report.py                               |  58 +-
+ tests/test_strategy_two_sided_momentum.py          | 729 +++++++++++++++++++++
+ tests/test_sweep.py                                |  58 +-
+ 18 files changed, 2362 insertions(+), 25 deletions(-)
+
+## Diff
+diff --git a/scripts/gates.py b/scripts/gates.py
+new file mode 100644
+index 0000000..2593d82
+--- /dev/null
++++ b/scripts/gates.py
+@@ -0,0 +1,331 @@
++"""Гейты спеки 01 «Двусторонний импульс/пробой»: таблица пяти гейтов по CSV-развёрткам.
++
++Скрипт живёт вне пакета `strategylab` и импортирует только стандартную бибилиотеку:
++он читает пять CSV-развёрток `sweep.py` и ничего не пишет — ни в базу, ни в
++`data/touch_registry.json` (касания регистрирует развёртка, не гейты).
++
++Правила зафиксированы pre-registered спекой (`strategydocs/spec_01_two_sided_momentum_20261022.md`)
++и брифом задачи 12; спорить с числами скрипт не вправе:
++
++1. Гейт 1 — ≥100 сделок на инструмент (сумма `long_trades + short_trades` строки
++   дефолтной комбинации на BTC и на ETH). Спека оговорила третий исход отдельно:
++   <30 печатает «расширять спек», 30–99 печатает «не пройден».
++2. Гейт 2 — медианный PF сетки ≥1.15 на КАЖДОМ инструменте (по 18 строкам).
++   `null` в `profit_factor` — ни одной убыточной сделки, то есть бесконечное
++   преимущество: такой ряд ранжируется ВЫШЕ любого числа (не выбрасывается и не
++   превращается в ноль). Число null-рядов печатается отдельной строкой: медиана,
++   держящаяся на малом числе конечных строк, — это видно.
++3. Гейт 3 — PF дефолтной комбинации ≥1.3 (при базовых двойных комиссиях — ровно
++   тех, что уже зафиксированы движком и напечатаны в шапке развёртки). null PF
++   здесь = бесконечность = пройден.
++4. Гейт 4 — ≥2 из 3 ETH-фолдов с `net_pnl > 0` на дефолтной комбинации.
++5. Гейт 5 — раздельность опубликована: у обеих сторон `trades ≥ 1`; если
++   `net_pnl` одной стороны ≤ 0, а положительная сторона удерживает всю прибыль,
++   — пометка «одно-система». Это требование честности интерпретации, а не число:
++   строка «ГЕЙТЫ: пройдены / не пройдены» складывается из гейтов 1–4, гейт 5
++   помечается отдельно и вердикт не переворачивает.
++
++Дефолтная комбинация — константа модуля; ряд CSV опознаётся по значениям трёх
++имённых колонок, а не по номеру строки. Парсер читает контракт stdout `sweep.py`:
++`encoding="utf-8-sig"` (страховка от перенаправления через `>`), строки до
++`spec_version,` — шапка, первая пустая строка — конец таблицы, хвост
++`комбинаций:` / `отклонено:` строками сетки не становится. Числа берутся только
++из пессимистичной развёртки: шапка обязана содержать `intrabar: PESSIMISTIC`.
++
++Медиана чётного числа рядов — среднее двух средних (правило зафиксировано здесь
++же: если одно из двух средних — null-ряд, медиана бесконечна).
++
++Запуск из корня репозитория:
++
++    .venv\\Scripts\\python.exe scripts\\gates.py --btc data\\sweep_btc_fit.csv `
++        --eth data\\sweep_eth_fit.csv --folds data\\sweep_eth_fold1.csv `
++        data\\sweep_eth_fold2.csv data\\sweep_eth_fold3.csv
++"""
++
++from __future__ import annotations
++
++import argparse
++import csv
++from collections.abc import Mapping, Sequence
++from dataclasses import dataclass
++from decimal import Decimal
++from pathlib import Path
++
++# Pre-registered дефолты спеки; ряд CSV опознаётся по этим трём колонкам.
++DEFAULT_COMBO: Mapping[str, Decimal] = {
++    "donch_len": Decimal("48"),
++    "atr_mult": Decimal("1.5"),
++    "bias_len": Decimal("48"),
++}
++
++MIN_TRADES = 100  # гейт 1: нижняя граница «пройден»
++EXPAND_TRADES = 30  # гейт 1: ниже — «расширять спек», между — «не пройден»
++MEDIAN_PF_FLOOR = Decimal("1.15")  # гейт 2
++DEFAULT_PF_FLOOR = Decimal("1.3")  # гейт 3
++INFINITE_MARK = "∞"  # печать бесконечного PF (null-ряда)
++
++
++@dataclass(frozen=True)
++class SweepRow:
++    """Одна строка CSV-развёртки: спек, параметры, метрики пессимистичной вилки."""
++
++    spec_version: str
++    params: Mapping[str, Decimal]
++    trades: int
++    wins: int
++    net_pnl: Decimal
++    max_drawdown: Decimal
++    profit_factor: Decimal | None
++    sharpe: Decimal | None
++    long_trades: int
++    long_net_pnl: Decimal
++    long_profit_factor: Decimal | None
++    short_trades: int
++    short_net_pnl: Decimal
++    short_profit_factor: Decimal | None
++
++
++def _cell(record: Mapping[str, str | None], name: str) -> str:
++    """Обязательная ячейка CSV: отсутствующая колонка — ошибка, а не тихий пропуск."""
++    value = record.get(name)
++    if value is None:
++        raise ValueError(f"в CSV нет колонки {name!r} — парсер читает контракт sweep.py")
++    return value
++
++
++def _decimal(record: Mapping[str, str | None], name: str) -> Decimal:
++    return Decimal(_cell(record, name))
++
++
++def _integer(record: Mapping[str, str | None], name: str) -> int:
++    return int(_cell(record, name))
++
++
++def _decimal_or_null(record: Mapping[str, str | None], name: str) -> Decimal | None:
++    """null — это None (бесконечность), а не 0: безубыточную комбинацию не казнят нулём."""
++    value = _cell(record, name)
++    return None if value == "null" else Decimal(value)
++
++
++def _row(record: Mapping[str, str | None]) -> SweepRow:
++    return SweepRow(
++        spec_version=_cell(record, "spec_version"),
++        params={name: _decimal(record, name) for name in DEFAULT_COMBO},
++        trades=_integer(record, "trades"),
++        wins=_integer(record, "wins"),
++        net_pnl=_decimal(record, "net_pnl"),
++        max_drawdown=_decimal(record, "max_drawdown"),
++        profit_factor=_decimal_or_null(record, "profit_factor"),
++        sharpe=_decimal_or_null(record, "sharpe"),
++        long_trades=_integer(record, "long_trades"),
++        long_net_pnl=_decimal(record, "long_net_pnl"),
++        long_profit_factor=_decimal_or_null(record, "long_profit_factor"),
++        short_trades=_integer(record, "short_trades"),
++        short_net_pnl=_decimal(record, "short_net_pnl"),
++        short_profit_factor=_decimal_or_null(record, "short_profit_factor"),
++    )
++
++
++def parse_sweep(path: Path) -> tuple[SweepRow, ...]:
++    """Строки таблицы CSV-развёртки: до `spec_version,` шапка, пустая строка — конец таблицы."""
++    lines = path.read_text(encoding="utf-8-sig").splitlines()
++    header_at: int | None = None
++    for index, line in enumerate(lines):
++        if line.startswith("spec_version,"):
++            header_at = index
++            break
++    if header_at is None:
++        raise ValueError(f"{path}: нет строки заголовка, начинающейся с `spec_version,`")
++    header = [line.strip() for line in lines[:header_at]]
++    if "intrabar: PESSIMISTIC" not in header:
++        raise ValueError(
++            f"{path}: шапка без `intrabar: PESSIMISTIC` — числа не из развёртки sweep.py"
++        )
++    table: list[str] = []
++    for line in lines[header_at + 1 :]:
++        if not line.strip():
++            break
++        table.append(line)
++    reader = csv.DictReader([lines[header_at], *table])
++    return tuple(_row(record) for record in reader)
++
++
++def find_default_row(rows: Sequence[SweepRow], label: str) -> SweepRow:
++    """Ровно один ряд с pre-registered дефолтами по значениям трёх именных колонок."""
++    matches = [
++        row
++        for row in rows
++        if all(row.params[name] == value for name, value in DEFAULT_COMBO.items())
++    ]
++    if not matches:
++        raise ValueError(f"{label}: в развёртке нет строки дефолтной комбинации")
++    if len(matches) > 1:
++        raise ValueError(f"{label}: несколько строк дефолтной комбинации ({len(matches)})")
++    return matches[0]
++
++
++def median_pf(values: Sequence[Decimal | None]) -> Decimal | None:
++    """Медиана PF с null-рядами: None ранжируется выше любого числа (бесконечность).
++
++    Чётное число рядов — среднее двух средних; если хотя бы одно из двух средних
++    — None, медиана бесконечна и возвращается None. Пустой набор — ошибка.
++    """
++    if not values:
++        raise ValueError("медиана не считается по пустому набору")
++    finite = sorted(value for value in values if value is not None)
++    total = len(values)
++    indexes = [total // 2] if total % 2 else [total // 2 - 1, total // 2]
++    picked: list[Decimal] = []
++    for index in indexes:
++        if index >= len(finite):
++            # Позиция попала в хвост null-рядов: медиана бесконечна.
++            return None
++        value = finite[index]
++        picked.append(value)
++    if len(picked) == 2:
++        return (picked[0] + picked[1]) / Decimal(2)
++    return picked[0]
++
++
++def _at_least(value: Decimal | None, floor: Decimal) -> bool:
++    """None = бесконечность: всегда не меньше любого конечного порога."""
++    return value is None or value >= floor
++
++
++def _verdict(passed: bool) -> str:
++    return "пройден" if passed else "не пройден"
++
++
++def _fmt(value: Decimal | None) -> str:
++    """Decimal без экспоненты; None — знаком бесконечности."""
++    return INFINITE_MARK if value is None else format(value, "f")
++
++
++def evaluate(btc_csv: Path, eth_csv: Path, fold_csvs: Sequence[Path]) -> list[str]:
++    """Таблица пяти гейтов + строка вердикта; вердикт складывается из гейтов 1–4."""
++    if len(fold_csvs) != 3:
++        raise ValueError("гейт 4 требует ровно три CSV-фолда")
++    btc_rows = parse_sweep(btc_csv)
++    eth_rows = parse_sweep(eth_csv)
++    btc_default = find_default_row(btc_rows, "BTC")
++    eth_default = find_default_row(eth_rows, "ETH")
++    folds = [
++        find_default_row(parse_sweep(path), f"фолд{index + 1}")
++        for index, path in enumerate(fold_csvs)
++    ]
++
++    lines = [f"строки сетки: BTC={len(btc_rows)}, ETH={len(eth_rows)}"]
++    instruments = (("BTC", btc_default), ("ETH", eth_default))
++
++    # Гейт 1: сделки дефолтной комбинации, сумма сторон.
++    parts: list[str] = []
++    gate1 = True
++    for label, row in instruments:
++        total = row.long_trades + row.short_trades
++        if total >= MIN_TRADES:
++            outcome = "пройден"
++        elif total >= EXPAND_TRADES:
++            outcome = "не пройден"
++            gate1 = False
++        else:
++            outcome = "расширять спек"
++            gate1 = False
++        parts.append(f"{label}: {total} — {outcome}")
++    gate1_prefix = f"гейт 1 (≥{MIN_TRADES} сделок на инструмент, long+short дефолта): "
++    lines.append(gate1_prefix + "; ".join(parts))
++
++    # Гейт 2: медианный PF сетки на каждом инструменте.
++    btc_median = median_pf([row.profit_factor for row in btc_rows])
++    eth_median = median_pf([row.profit_factor for row in eth_rows])
++    btc_gate2 = _at_least(btc_median, MEDIAN_PF_FLOOR)
++    eth_gate2 = _at_least(eth_median, MEDIAN_PF_FLOOR)
++    gate2 = btc_gate2 and eth_gate2
++    lines.append(
++        f"гейт 2 (медианный PF сетки ≥ {_fmt(MEDIAN_PF_FLOOR)} на каждом инструменте): "
++        f"BTC: {_fmt(btc_median)} — {_verdict(btc_gate2)}; "
++        f"ETH: {_fmt(eth_median)} — {_verdict(eth_gate2)}"
++    )
++    btc_nulls = sum(1 for row in btc_rows if row.profit_factor is None)
++    eth_nulls = sum(1 for row in eth_rows if row.profit_factor is None)
++    lines.append(
++        f"null-рядов: BTC={btc_nulls}, ETH={eth_nulls} "
++        "(PF=null — ни одной убыточной сделки, в медиане выше любого числа)"
++    )
++
++    # Гейт 3: PF дефолтной комбинации (двойные комиссии уже в шапке развёртки).
++    lines.append(
++        f"гейт 3 (PF дефолтной комбинации ≥ {_fmt(DEFAULT_PF_FLOOR)}): "
++        f"BTC: {_fmt(btc_default.profit_factor)} — "
++        f"{'пройден' if _at_least(btc_default.profit_factor, DEFAULT_PF_FLOOR) else 'не пройден'}"
++        f"; ETH: {_fmt(eth_default.profit_factor)} — "
++        f"{'пройден' if _at_least(eth_default.profit_factor, DEFAULT_PF_FLOOR) else 'не пройден'}"
++    )
++    gate3 = _at_least(btc_default.profit_factor, DEFAULT_PF_FLOOR) and _at_least(
++        eth_default.profit_factor, DEFAULT_PF_FLOOR
++    )
++
++    # Гейт 4: знак net_pnl дефолта на трёх ETH-фолдах.
++    fold_texts = ", ".join(
++        f"фолд{index + 1}: {format(row.net_pnl, 'f')}" for index, row in enumerate(folds)
++    )
++    positive = sum(1 for row in folds if row.net_pnl > 0)
++    gate4 = positive >= 2
++    lines.append(
++        f"гейт 4 (≥2 из 3 ETH-фолдов с net_pnl > 0): {fold_texts} — "
++        f"{'пройдено' if gate4 else 'не пройдено'} ({positive} из 3)"
++    )
++
++    # Гейт 5: раздельность опубликована; в вердикт 1–4 не входит.
++    parts = []
++    one_system: list[str] = []
++    for label, row in instruments:
++        published = row.long_trades >= 1 and row.short_trades >= 1
++        parts.append(
++            f"{label}: долг {row.long_trades} / шорт {row.short_trades} — "
++            f"{'опубликована' if published else 'не опубликована'}"
++        )
++        # Вся прибыль на одной стороне: вторая ≤ 0, положительная строго > 0.
++        if row.long_net_pnl > 0 >= row.short_net_pnl or row.short_net_pnl > 0 >= row.long_net_pnl:
++            one_system.append(label)
++    gate5_line = (
++        "гейт 5 (раздельность long/short опубликована; в вердикт не входит): " + "; ".join(parts)
++    )
++    if one_system:
++        gate5_line += f"; пометка: одно-система ({', '.join(one_system)})"
++    lines.append(gate5_line)
++
++    verdict = "ГЕЙТЫ: пройдены" if (gate1 and gate2 and gate3 and gate4) else "ГЕЙТЫ: не пройдены"
++    lines.append(verdict)
++    return lines
++
++
++def _parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(
++        prog="gates.py",
++        description="Гейты спеки 01 по CSV-развёрткам sweep.py: таблица пяти гейтов и вердикт.",
++    )
++    parser.add_argument(
++        "--btc", type=Path, required=True, metavar="CSV", help="CSV сетки на BTC fit"
++    )
++    parser.add_argument(
++        "--eth", type=Path, required=True, metavar="CSV", help="CSV сетки на ETH fit"
++    )
++    parser.add_argument(
++        "--folds",
++        type=Path,
++        nargs=3,
++        required=True,
++        metavar="CSV",
++        help="три CSV ETH-фолдов (дефолтная комбинация)",
++    )
++    return parser
++
++
++def main(argv: Sequence[str] | None = None) -> None:
++    args = _parser().parse_args(argv)
++    for line in evaluate(args.btc, args.eth, args.folds):
++        print(line)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/sweep.py b/scripts/sweep.py
+index bd1b7fd..2252573 100644
+--- a/scripts/sweep.py
++++ b/scripts/sweep.py
+@@ -70,27 +70,34 @@ from strategylab.strategy.examples import STRATEGY_CLASSES, build
+ DEFAULT_CAPITAL = Decimal("10000")
+ 
+ # Метка прогона в шапке спека: развёртка — не `cli run`, версии спеков разные.
+ RULES_REF = "sweep"
+ 
+ # Реестр касаний зон: одна строка jsonl — одно касание не-fit зоны при одном
+ # прогоне развёртки. Файл в репозитории, имя закреплено.
+ TOUCH_REGISTRY = Path(__file__).resolve().parent.parent / "data" / "touch_registry.json"
+ 
+ # Колонки метрик в CSV: тот же набор, что в отчёте прогона.
++# Шесть боковых колонок идут после sharpe в этом порядке: их читает gates.py.
+ METRIC_COLUMNS = (
+     "trades",
+     "wins",
+     "net_pnl",
+     "max_drawdown",
+     "profit_factor",
+     "sharpe",
++    "long_trades",
++    "long_net_pnl",
++    "long_profit_factor",
++    "short_trades",
++    "short_net_pnl",
++    "short_profit_factor",
+ )
+ 
+ # Зоны, за касания которых отвечает реестр: fit — подбор, он свободен.
+ TOUCH_ROLES = (Zone.HOLDOUT, Zone.LIVE)
+ 
+ 
+ def _parse_ts(text: str) -> int:
+     """Время окна — целым Decimal-строкой: никакого float из argparse."""
+     try:
+         value = Decimal(text)
+@@ -317,20 +324,28 @@ def _row(report: Report, combination: Mapping[str, Decimal], names: Sequence[str
+     metrics = report.metrics
+     cells = [
+         report.spec_version,
+         *(_plain(combination[name]) for name in names),
+         str(metrics.trades),
+         str(metrics.wins),
+         _plain(metrics.net_pnl),
+         _plain(metrics.max_drawdown),
+         _plain_or_null(metrics.profit_factor()),
+         _plain_or_null(metrics.sharpe()),
++        # Стороны — сериализацией из report.py: trades/net_pnl через _plain,
++        # profit_factor None — маркером null.
++        str(metrics.long.trades),
++        _plain(metrics.long.net_pnl),
++        _plain_or_null(metrics.long.profit_factor()),
++        str(metrics.short.trades),
++        _plain(metrics.short.net_pnl),
++        _plain_or_null(metrics.short.profit_factor()),
+     ]
+     return ",".join(cells)
+ 
+ 
+ def _plain(value: Decimal) -> str:
+     """Decimal без экспоненты: CSV читается человеком и сравнивается diff-ом."""
+     return format(value, "f")
+ 
+ 
+ def _plain_or_null(value: Decimal | None) -> str:
+diff --git "a/strategydocs/\320\276\321\202\321\207\321\221\321\202_spec_01_two_sided_momentum_20261027.md" "b/strategydocs/\320\276\321\202\321\207\321\221\321\202_spec_01_two_sided_momentum_20261027.md"
+new file mode 100644
+index 0000000..b249191
+--- /dev/null
++++ "b/strategydocs/\320\276\321\202\321\207\321\221\321\202_spec_01_two_sided_momentum_20261027.md"
+@@ -0,0 +1,135 @@
++# Отчёт спеки 01: «Двусторонний импульс/пробой» — гейты и вердикт
++
++Дата отчёта: 2026-10-27 (имя файла — дата плана; прогоны выполнены 2026-10-28).
++Спека: `spec_01_two_sided_momentum_20261022.md` (pre-registered v1).
++Стратегия: `two_sided_momentum`, капитал 10000, интервал 1m (агрегация 15m внутри стратегии).
++
++## Шапка развёрток (из CSV-файлов, `data/`, вне git)
++
++| развёртка | файл | окно | строк | spec_version (база) | zones_used | touches | intrabar | elapsed |
++|---|---|---|---|---|---|---|---|---|
++| BTC fit | `sweep_btc_fit.csv` | [1761523200, 1790294400) | 18 | `e8d0ec83b0cb` | fit | holdout=0, live=0 | PESSIMISTIC | 332.08s |
++| ETH fit | `sweep_eth_fit.csv` | [1761523200, 1790294400) | 18 | `a5fdc0bfae15` | fit | holdout=0, live=0 | PESSIMISTIC | 338.62s |
++| ETH фолд 1 | `sweep_eth_fold1.csv` | [1761523200, 1771113600) | 1 | `a1452bfd659d` | fit | holdout=0, live=0 | PESSIMISTIC | 5.86s |
++| ETH фолд 2 | `sweep_eth_fold2.csv` | [1771113600, 1780704000) | 1 | `62550b386354` | fit | holdout=0, live=0 | PESSIMISTIC | 5.80s |
++| ETH фолд 3 | `sweep_eth_fold3.csv` | [1780704000, 1790294400) | 1 | `2412c0d04d3c` | fit | holdout=0, live=0 | PESSIMISTIC | 5.87s |
++
++Модель издержек (одинаковая во всех шапках): `taker_fee=0.0006 maker_fee=0.0002 slippage=0.0005 leverage=1` — двойные комиссии тейкером уже зафиксированы движком (условие гейта 3).
++
++Комбинаций отклонено: 0 во всех пяти развёртках (хвост `отклонено:` отсутствует; строк ровно 18/18/1/1/1).
++
++**Holdout и live не тронуты: касания `holdout=0, live=0` во всех шапках; файла `data/touch_registry.json` нет ни до, ни после прогонов (проверено `Test-Path` → False).**
++
++## Сетка 18 комбинаций: BTC fit (пессимистичная вилка)
++
++| donch_len | atr_mult | bias_len | сделки | прибыльные | net_pnl | max_drawdown | PF | sharpe | долг: сделки / net_pnl / PF | шорт: сделки / net_pnl / PF |
++|---|---|---|---|---|---|---|---|---|---|---|
++| 24 | 1.0 | 0 | 1640 | 278 | -9999.9969 | 9999.9969 | 0.2539 | -0.2253 | 809 / -4738.7072 / 0.2177 | 831 / -5261.2896 / 0.2838 |
++| 24 | 1.0 | 48 | 1502 | 266 | -9999.9861 | 9999.9861 | 0.2556 | -0.2325 | 734 / -4518.3106 / 0.2204 | 768 / -5481.6755 / 0.2822 |
++| 24 | 1.5 | 0 | 1403 | 247 | -9998.7367 | 9998.7367 | 0.3585 | -0.2092 | 698 / -5504.7121 / 0.2677 | 705 / -4494.0247 / 0.4431 |
++| 24 | 1.5 | 48 | 1284 | 233 | -9996.6104 | 9996.6104 | 0.3635 | -0.2153 | 633 / -5260.7082 / 0.2787 | 651 / -4735.9022 / 0.4370 |
++| 24 | 2 | 0 | 1209 | 246 | -9972.5840 | 9989.2529 | 0.3991 | -0.2151 | 593 / -5691.5420 / 0.2931 | 616 / -4281.0419 / 0.4990 |
++| 24 | 2 | 48 | 1101 | 230 | -9942.3511 | 9948.5170 | 0.4127 | -0.2175 | 537 / -5532.9788 / 0.3110 | 564 / -4409.3723 / 0.5044 |
++| 48 | 1.0 | 0 | 1060 | 211 | -9997.6679 | 9997.6679 | 0.3342 | -0.2211 | 531 / -5074.8739 / 0.2698 | 529 / -4922.7940 / 0.3897 |
++| 48 | 1.0 | 48 | 1049 | 208 | -9997.4769 | 9997.4769 | 0.3304 | -0.2258 | 524 / -4903.1225 / 0.2751 | 525 / -5094.3544 / 0.3763 |
++| 48 | 1.5 | 0 | 916 | 182 | -9927.9198 | 10051.3124 | 0.3995 | -0.2279 | 455 / -5316.9676 / 0.3185 | 461 / -4610.9522 / 0.4718 |
++| 48 | 1.5 | 48 **(дефолт)** | 905 | 181 | -9921.9849 | 10045.3776 | 0.4014 | -0.2301 | 448 / -5142.6346 / 0.3275 | 457 / -4779.3504 / 0.4648 |
++| 48 | 2 | 0 | 787 | 179 | -9595.2243 | 9739.1796 | 0.4398 | -0.2329 | 386 / -5195.8920 / 0.3549 | 401 / -4399.3323 / 0.5151 |
++| 48 | 2 | 48 | 777 | 177 | -9566.5348 | 9710.7482 | 0.4439 | -0.2332 | 380 / -5062.0248 / 0.3641 | 397 / -4504.5100 / 0.5126 |
++| 96 | 1.0 | 0 | 695 | 141 | -9932.9945 | 9932.9945 | 0.3736 | -0.2337 | 349 / -6138.0429 / 0.2500 | 346 / -3794.9516 / 0.5055 |
++| 96 | 1.0 | 48 | 695 | 141 | -9932.9945 | 9932.9945 | 0.3736 | -0.2337 | 349 / -6138.0429 / 0.2500 | 346 / -3794.9516 / 0.5055 |
++| 96 | 1.5 | 0 | 597 | 118 | -9418.2726 | 9426.9692 | 0.4094 | -0.2640 | 296 / -5538.8929 / 0.3079 | 301 / -3879.3797 / 0.5117 |
++| 96 | 1.5 | 48 | 597 | 118 | -9418.2726 | 9426.9692 | 0.4094 | -0.2640 | 296 / -5538.8929 / 0.3079 | 301 / -3879.3797 / 0.5117 |
++| 96 | 2 | 0 | 515 | 117 | -8470.1695 | 8481.4101 | 0.4758 | -0.2437 | 254 / -5253.1916 / 0.3548 | 261 / -3216.9779 / 0.5988 |
++| 96 | 2 | 48 | 515 | 117 | -8470.1695 | 8481.4101 | 0.4758 | -0.2437 | 254 / -5253.1916 / 0.3548 | 261 / -3216.9779 / 0.5988 |
++
++Медианный PF сетки BTC (18 строк, null-рядов 0; среднее двух средних `0.3991127200828438768496525548` и `0.3994688010254327535343851854`): **0.3992907605541383151920188701**.
++Центр (дефолт 48/1.5/48) PF: **0.4014469398734172712187715749**.
++
++## Сетка 18 комбинаций: ETH fit (пессимистичная вилка)
++
++| donch_len | atr_mult | bias_len | сделки | прибыльные | net_pnl | max_drawdown | PF | sharpe | долг: сделки / net_pnl / PF | шорт: сделки / net_pnl / PF |
++|---|---|---|---|---|---|---|---|---|---|---|
++| 24 | 1.0 | 0 | 1478 | 301 | -9999.2784 | 9999.2784 | 0.4155 | -0.1802 | 748 / -6228.5271 / 0.2958 | 730 / -3770.7514 / 0.5436 |
++| 24 | 1.0 | 48 | 1354 | 277 | -9998.2945 | 10198.1042 | 0.4126 | -0.1875 | 683 / -6422.9329 / 0.2708 | 671 / -3575.3616 / 0.5647 |
++| 24 | 1.5 | 0 | 1300 | 288 | -9976.6962 | 10037.5416 | 0.4495 | -0.1779 | 658 / -6086.7670 / 0.3375 | 642 / -3889.9292 / 0.5648 |
++| 24 | 1.5 | 48 | 1194 | 264 | -9960.4086 | 10152.1376 | 0.4432 | -0.1873 | 601 / -6050.8783 / 0.3225 | 593 / -3909.5303 / 0.5636 |
++| 24 | 2 | 0 | 1137 | 266 | -9802.7915 | 9802.7915 | 0.4851 | -0.1859 | 572 / -5480.7679 / 0.4231 | 565 / -4322.0236 / 0.5469 |
++| 24 | 2 | 48 | 1044 | 245 | -9718.6050 | 9747.6393 | 0.4874 | -0.1913 | 518 / -5180.2320 / 0.4320 | 526 / -4538.3729 / 0.5388 |
++| 48 | 1.0 | 0 | 922 | 206 | -9950.0397 | 10081.0359 | 0.4259 | -0.2204 | 476 / -6542.4790 / 0.2904 | 446 / -3407.5607 / 0.5799 |
++| 48 | 1.0 | 48 | 909 | 200 | -9950.8194 | 10081.8156 | 0.4092 | -0.2283 | 470 / -6551.4931 / 0.2728 | 439 / -3399.3262 / 0.5660 |
++| 48 | 1.5 | 0 | 815 | 191 | -9660.6105 | 9735.8068 | 0.4532 | -0.2192 | 417 / -5925.9435 / 0.3511 | 398 / -3734.6670 / 0.5625 |
++| 48 | 1.5 | 48 **(дефолт)** | 802 | 186 | -9649.2680 | 9724.4644 | 0.4443 | -0.2239 | 411 / -6002.2747 / 0.3381 | 391 / -3646.9933 / 0.5604 |
++| 48 | 2 | 0 | 713 | 170 | -8826.3762 | 8826.3762 | 0.5230 | -0.2026 | 363 / -5235.4073 / 0.4556 | 350 / -3590.9689 / 0.5959 |
++| 48 | 2 | 48 | 701 | 167 | -8794.7570 | 8794.7570 | 0.5170 | -0.2061 | 357 / -5185.7574 / 0.4508 | 344 / -3608.9995 / 0.5882 |
++| 96 | 1.0 | 0 | 584 | 147 | -9430.5578 | 9643.8638 | 0.4288 | -0.2749 | 303 / -5764.0225 / 0.3293 | 281 / -3666.5352 / 0.5368 |
++| 96 | 1.0 | 48 | 584 | 147 | -9430.5578 | 9643.8638 | 0.4288 | -0.2749 | 303 / -5764.0225 / 0.3293 | 281 / -3666.5352 / 0.5368 |
++| 96 | 1.5 | 0 | 515 | 130 | -8339.4060 | 8537.2403 | 0.4549 | -0.2762 | 262 / -4494.5484 / 0.4317 | 253 / -3844.8576 / 0.4797 |
++| 96 | 1.5 | 48 | 515 | 130 | -8339.4060 | 8537.2403 | 0.4549 | -0.2762 | 262 / -4494.5484 / 0.4317 | 253 / -3844.8576 / 0.4797 |
++| 96 | 2 | 0 | 446 | 117 | -6370.3285 | 6570.6493 | 0.6023 | -0.1826 | 227 / -3296.8340 / 0.6061 | 219 / -3073.4945 / 0.5980 |
++| 96 | 2 | 48 | 446 | 117 | -6370.3285 | 6570.6493 | 0.6023 | -0.1826 | 227 / -3296.8340 / 0.6061 | 219 / -3073.4945 / 0.5980 |
++
++Медианный PF сетки ETH (18 строк, null-рядов 0; среднее двух средних `0.4495461745938453330462686395` и `0.4532092758359277131967947507`): **0.4513777252148865231215316951**.
++Центр (дефолт 48/1.5/48) PF: **0.4443193303697570630578935551**.
++
++## ETH: три непересекающихся фолда (дефолтная комбинация 48/1.5/48)
++
++| фолд | окно | сделки | net_pnl | PF | долг: сделки / net_pnl | шорт: сделки / net_pnl |
++|---|---|---|---|---|---|---|
++| 1 | [1761523200, 1771113600) | 275 | -6250.6461 | 0.4822 | 129 / -4151.4132 | 146 / -2099.2329 |
++| 2 | [1771113600, 1780704000) | 267 | -7049.9285 | 0.3477 | 131 / -3972.0353 | 136 / -3077.8933 |
++| 3 | [1780704000, 1790294400) | 257 | -6778.8911 | 0.4062 | 151 / -3511.2535 | 106 / -3267.6377 |
++
++Точные значения `net_pnl` и `profit_factor` из CSV (полная точность Decimal, строки дефолтной комбинации):
++
++| фолд | net_pnl | profit_factor |
++|---|---|---|
++| 1 | -6250.646053630254496394382650 | 0.4822125915021098527947720067 |
++| 2 | -7049.928536826043523483533541 | 0.3476974177635690787101094374 |
++| 3 | -6778.891134796426656618597000 | 0.4062210064987807067794804296 |
++
++## Разбивка долг/шорт дефолтной комбинации (гейт инварианта 5 — публикация раздельных сторон)
++
++- BTC (905 сделок): долг 448 сделок, net_pnl -5142.6346, PF 0.3275; шорт 457 сделок, net_pnl -4779.3504, PF 0.4648.
++- ETH (802 сделки): долг 411 сделок, net_pnl -6002.2747, PF 0.3381; шорт 391 сделка, net_pnl -3646.9933, PF 0.5604.
++- Обе стороны торгуют (trades ≥ 1 с каждой) — раздельность опубликована; при этом обе стороны на обоих инструментах в минусе, поэтому ни одна не «удерживает всю прибыль» и пометка `одно-система` не выставлена.
++
++## Ширина вилки (пессимистичная vs оптимистичная, `cli run` на дефолте полного fit-окна)
++
++| инструмент | пессимистичная net_pnl | оптимистичная net_pnl | сделки (песс./оптим.) |
++|---|---|---|---|
++| BTCUSDT | -9921.984938580256861831677647 | -9921.984938580256861831677647 | 905 / 905 |
++| ETHUSDT | -9649.268006566539404816100970 | -9649.268006566539404816100970 | 802 / 802 |
++
++Вилки совпадают побайтово, вердикт CLI на обоих инструментах: `ВЕРДИКТ: измерима`. Это факт прогона (отсутствие внутрибарных коллизий порядка на дефолтной комбинации), а не вывод о robustness.
++
++## Гейты (вывод `scripts/gates.py`, дословно)
++
++```
++строки сетки: BTC=18, ETH=18
++гейт 1 (≥100 сделок на инструмент, long+short дефолта): BTC: 905 — пройден; ETH: 802 — пройден
++гейт 2 (медианный PF сетки ≥ 1.15 на каждом инструменте): BTC: 0.3992907605541383151920188701 — не пройден; ETH: 0.4513777252148865231215316951 — не пройден
++null-рядов: BTC=0, ETH=0 (PF=null — ни одной убыточной сделки, в медиане выше любого числа)
++гейт 3 (PF дефолтной комбинации ≥ 1.3): BTC: 0.4014469398734172712187715749 — не пройден; ETH: 0.4443193303697570630578935551 — не пройден
++гейт 4 (≥2 из 3 ETH-фолдов с net_pnl > 0): фолд1: -6250.646053630254496394382650, фолд2: -7049.928536826043523483533541, фолд3: -6778.891134796426656618597000 — не пройдено (0 из 3)
++гейт 5 (раздельность long/short опубликована; в вердикт не входит): BTC: долг 448 / шорт 457 — опубликована; ETH: долг 411 / шорт 391 — опубликована
++ГЕЙТЫ: не пройдены
++```
++
++| гейт | правило (pre-registered) | измерено | итог |
++|---|---|---|---|
++| 1 | ≥100 сделок на инструмент (дефолт, long+short); <30 — расширять спек | BTC 905, ETH 802 | пройден |
++| 2 | медианный PF сетки ≥1.15 на BTC и на ETH | BTC 0.3993, ETH 0.4514 | **не пройден** |
++| 3 | PF дефолтной комбинации ≥1.3 при двойных комиссиях | BTC 0.4014, ETH 0.4443 | **не пройден** |
++| 4 | ≥2 из 3 ETH-фолдов с net_pnl > 0 | 0 из 3 (все минусовые) | **не пройден** |
++| 5 | раздельность опубликована; в вердикт не входит | обе стороны торгуют на обоих инструментах, без пометки `одно-система` | опубликована |
++
++## Вердикт
++
++**ГЕЙТЫ: не пройдены.** Сработала заранее зарегистрированная в спеке вилка провала («медианный PF сетки < 1.15 на BTC и ETH»):
++
++> 2025-10..2026-10 не торговать классику вообще; следующий шаг — не подгон параметров, а смена класса идей.
++
++Holdout и live не тронуты — касаний ноль (`touches: holdout=0, live=0` во всех пяти развёртках), `data/touch_registry.json` отсутствует. Холдout-прогон по 18 суткам `[1790294400, 1791849600)` не выполняется: гейты не пройдены, и по спеке следующий шаг — смена класса идей, а не новое окно.
++
++Числа взяты из пессимистичных развёрток `scripts/sweep.py` (`intrabar: PESSIMISTIC` в шапке каждой); гейты посчитаны `scripts/gates.py` по CSV-файлам `data/sweep_*.csv` (файлы вне git).
+diff --git a/strategylab/broker/sim.py b/strategylab/broker/sim.py
+index 9598096..ad1012a 100644
+--- a/strategylab/broker/sim.py
++++ b/strategylab/broker/sim.py
+@@ -45,23 +45,38 @@ class BrokerSimulator:
+             self._mirror_reduced(order)
+         self._pending.append(order)
+ 
+     def _mirror_reduced(self, order: Order) -> None:
+         """reduce-only заявка зеркалит свой уровень в позицию.
+ 
+         STOP_MARKET зеркалит только уровень: стоп исполняется на весь
+         остаток позиции, размер зеркалу не нужен. LIMIT зеркалит уровень
+         и размер: тейк-профит на уменьшенной заявке исполняется её объёмом,
+         а не всей позицией — так работает частичная фиксация прибыли.
++
++        Устаревшее зеркало стопа снимается с покоя: уровень уже перезаписан
++        в позицию, resting-заявка того же направления никогда не исполнится
++        (`_apply_stops` пропускает reduce-only) и только оплачивает обход
++        `_pending` в apply_bar. LIMIT-цели не вытесняются: resting-цели
++        разных объёмов — разные частичные тейки, они должны доживать.
+         """
+         if order.kind is OrderKind.STOP_MARKET and order.stop_price is not None:
+             self._position.stop_price = order.stop_price
++            self._pending = [
++                resting
++                for resting in self._pending
++                if not (
++                    resting.reduce_only
++                    and resting.kind is OrderKind.STOP_MARKET
++                    and resting.side is order.side
++                )
++            ]
+         elif order.kind is OrderKind.LIMIT and order.limit_price is not None:
+             self._position.take_profit = order.limit_price
+             self._position.take_profit_qty = order.qty
+ 
+     def apply_bar(self, bar: Bar) -> list[Fill]:
+         fills = self._apply_stops(bar)
+         self._cancel_reduced()
+         fills += self._apply_exits(bar)
+         self._cancel_reduced()
+         self._apply_liquidation(bar)
+diff --git a/strategylab/core/engine.py b/strategylab/core/engine.py
+index 066c182..89870c6 100644
+--- a/strategylab/core/engine.py
++++ b/strategylab/core/engine.py
+@@ -121,21 +121,22 @@ def _record_realized(
+     remaining = before_qty
+     for fill in fills:
+         if remaining == 0:
+             break
+         if fill.side is before_side:
+             continue
+         closed = min(fill.qty, remaining)
+         exit_fee = fill.fee if closed == fill.qty else fill.fee * closed / fill.qty
+         entry_fee = before_entry_fee * closed / before_qty
+         realized = (fill.price - before_entry) * closed * sign - exit_fee - entry_fee
+-        metrics.record(fill, realized)
++        # Сторона закрываемой позиции, а не филла: у закрывающего филла она противоположная.
++        metrics.record(fill, realized, before_side)
+         remaining -= closed
+         if trade_log is not None:
+             trade_log.close(fill, before_entry, realized, remaining)
+             if remaining == 0 and fill.qty > closed:
+                 # Переворот: остаток филла открывает новую позицию.
+                 trade_log.open(fill.ts)
+ 
+ 
+ def _close_window(
+     broker: BrokerSimulator,
+@@ -154,16 +155,18 @@ def _close_window(
+     """
+     position = broker.position
+     if not position.is_open:
+         return
+     exit_side = Side.SELL if position.side is Side.BUY else Side.BUY
+     price = broker.slipped(bar.close, exit_side)
+     fee = broker.costs.taker_fee * position.qty * price
+     fill = Fill(
+         ts=bar.ts, side=exit_side, price=price, qty=position.qty, fee=fee, reason="market"
+     )
++    side_before_close = position.side
+     sign = Decimal(1) if position.side is Side.BUY else Decimal(-1)
+     realized = (price - position.entry_price) * position.qty * sign - fee - position.entry_fee
+     position.apply_fill(fill)
+-    metrics.record(fill, realized)
++    # В bucket стороны позиции: закрывающий филл короткой позиции — BUY.
++    metrics.record(fill, realized, side_before_close)
+     if trade_log is not None:
+         trade_log.close(fill, position.entry_price, realized, Decimal("0"))
+diff --git a/strategylab/core/metrics.py b/strategylab/core/metrics.py
+index e3ebc4f..3dbdea9 100644
+--- a/strategylab/core/metrics.py
++++ b/strategylab/core/metrics.py
+@@ -1,16 +1,63 @@
+ from __future__ import annotations
+ 
++from collections.abc import Sequence
+ from dataclasses import dataclass, field
+ from decimal import Decimal
+ 
+-from strategylab.broker.orders import Fill
++from strategylab.broker.orders import Fill, Side
++
++
++def profit_factor_of(pnls: Sequence[Decimal], losses: int) -> Decimal | None:
++    """gross_profit / gross_loss; None при отсутствии убыточных сделок."""
++    if losses == 0:
++        return None
++    gross_profit = sum((p for p in pnls if p > 0), Decimal("0"))
++    gross_loss = -sum((p for p in pnls if p < 0), Decimal("0"))
++    return gross_profit / gross_loss
++
++
++def win_rate_of(wins: int, trades: int) -> Decimal | None:
++    """Доля выигрышных сделок; None при отсутствии сделок."""
++    if trades == 0:
++        return None
++    return Decimal(wins) / Decimal(trades)
++
++
++@dataclass(slots=True)
++class SideMetrics:
++    """Накопитель закрытых сделок одной стороны позиции.
++
++    Своих формул отношений не держит: profit_factor и win_rate считает теми же
++    функциями модуля, что и Metrics, — третья копия разъехалась бы при первой правке.
++    """
++
++    trades: int = 0
++    wins: int = 0
++    losses: int = 0
++    net_pnl: Decimal = Decimal("0")
++    _pnls: list[Decimal] = field(default_factory=list, repr=False)
++
++    def record(self, pnl: Decimal) -> None:
++        self.trades += 1
++        if pnl > 0:
++            self.wins += 1
++        elif pnl < 0:
++            self.losses += 1
++        self.net_pnl += pnl
++        self._pnls.append(pnl)
++
++    def profit_factor(self) -> Decimal | None:
++        return profit_factor_of(self._pnls, self.losses)
++
++    def win_rate(self) -> Decimal | None:
++        return win_rate_of(self.wins, self.trades)
+ 
+ 
+ @dataclass(slots=True)
+ class Metrics:
+     """Накопитель результата прогона.
+ 
+     Чистый аккумулятор: книгу позиций не ведёт и pnl из fill не выводит —
+     реализованный pnl закрытой сделки передаёт вызывающий (движок).
+ 
+     `equity` — капитал прогона: стартовый капитал плюс накопленный реализованный
+@@ -18,55 +65,59 @@ class Metrics:
+     видит стратегия в `StrategyState.equity`, и при нуле стратегия с
+     риск-сайзингом не открывает позицию вовсе.
+     """
+ 
+     trades: int = 0
+     wins: int = 0
+     losses: int = 0
+     net_pnl: Decimal = Decimal("0")
+     equity: Decimal = Decimal("0")
+     max_drawdown: Decimal = Decimal("0")
++    long: SideMetrics = field(default_factory=SideMetrics)
++    short: SideMetrics = field(default_factory=SideMetrics)
+     _peak: Decimal = Decimal("0")
+     _pnls: list[Decimal] = field(default_factory=list, repr=False)
+ 
+     def __post_init__(self) -> None:
+         """Пик капитала стартует со стартового equity: просадка меряется от него, а не от нуля."""
+         self._peak = self.equity
+ 
+-    def record(self, fill: Fill, pnl: Decimal) -> None:
++    def record(self, fill: Fill, pnl: Decimal, side: Side | None = None) -> None:
++        """Учесть закрытую сделку.
++
++        `side` — сторона закрываемой позиции (не филла: у филла она противоположная).
++        Если задана, сделка дополнительно попадает в соответствующий `SideMetrics`.
++        """
+         self.trades += 1
+         if pnl > 0:
+             self.wins += 1
+         elif pnl < 0:
+             self.losses += 1
+         self.net_pnl += pnl
+         self.equity += pnl
+         self._pnls.append(pnl)
+         if self.equity > self._peak:
+             self._peak = self.equity
+         drawdown = self._peak - self.equity
+         if drawdown > self.max_drawdown:
+             self.max_drawdown = drawdown
++        if side is not None:
++            bucket = self.long if side is Side.BUY else self.short
++            bucket.record(pnl)
+ 
+     def profit_factor(self) -> Decimal | None:
+         """gross_profit / gross_loss; None при отсутствии убыточных сделок."""
+-        if self.losses == 0:
+-            return None
+-        gross_profit = sum((p for p in self._pnls if p > 0), Decimal("0"))
+-        gross_loss = -sum((p for p in self._pnls if p < 0), Decimal("0"))
+-        return gross_profit / gross_loss
++        return profit_factor_of(self._pnls, self.losses)
+ 
+     def win_rate(self) -> Decimal | None:
+         """Доля выигрышных сделок; None при отсутствии сделок."""
+-        if self.trades == 0:
+-            return None
+-        return Decimal(self.wins) / Decimal(self.trades)
++        return win_rate_of(self.wins, self.trades)
+ 
+     def sharpe(self) -> Decimal | None:
+         """mean(pnl) / population stddev(pnl); None при < 2 сделок или нулевом stddev."""
+         if self.trades < 2:
+             return None
+         n = Decimal(self.trades)
+         mean = sum(self._pnls, Decimal("0")) / n
+         variance = sum(((p - mean) ** 2 for p in self._pnls), Decimal("0")) / n
+         stddev = variance.sqrt()
+         if stddev == 0:
+diff --git a/strategylab/report/report.py b/strategylab/report/report.py
+index 466cd39..7fbd5c9 100644
+--- a/strategylab/report/report.py
++++ b/strategylab/report/report.py
+@@ -56,20 +56,26 @@ class Report:
+             f"intrabar: {self.intrabar.name}",
+             f"trades: {m.trades}",
+             f"wins: {m.wins}",
+             f"losses: {m.losses}",
+             f"net_pnl: {_plain(m.net_pnl)}",
+             f"equity: {_plain(m.equity)}",
+             f"max_drawdown: {_plain(m.max_drawdown)}",
+             f"profit_factor: {_plain_or_null(m.profit_factor())}",
+             f"win_rate: {_plain_or_null(m.win_rate())}",
+             f"sharpe: {_plain_or_null(m.sharpe())}",
++            f"long_trades: {m.long.trades}",
++            f"long_net_pnl: {_plain(m.long.net_pnl)}",
++            f"long_profit_factor: {_plain_or_null(m.long.profit_factor())}",
++            f"short_trades: {m.short.trades}",
++            f"short_net_pnl: {_plain(m.short.net_pnl)}",
++            f"short_profit_factor: {_plain_or_null(m.short.profit_factor())}",
+         ))
+ 
+     def to_json(self) -> str:
+         """JSON отчёта: фиксированный порядок ключей — пять полей шапки, затем метрики.
+ 
+         Поля метрик перечислены белым списком: у Metrics есть приватные накопители,
+         которые asdict/vars выдали бы в отчёт. Decimal — строкой, None — как null.
+         """
+         m = self.metrics
+         payload: dict[str, Any] = {
+@@ -85,20 +91,26 @@ class Report:
+             "intrabar": self.intrabar.name,
+             "trades": m.trades,
+             "wins": m.wins,
+             "losses": m.losses,
+             "net_pnl": _plain(m.net_pnl),
+             "equity": _plain(m.equity),
+             "max_drawdown": _plain(m.max_drawdown),
+             "profit_factor": _optional_plain(m.profit_factor()),
+             "win_rate": _optional_plain(m.win_rate()),
+             "sharpe": _optional_plain(m.sharpe()),
++            "long_trades": m.long.trades,
++            "long_net_pnl": _plain(m.long.net_pnl),
++            "long_profit_factor": _optional_plain(m.long.profit_factor()),
++            "short_trades": m.short.trades,
++            "short_net_pnl": _plain(m.short.net_pnl),
++            "short_profit_factor": _optional_plain(m.short.profit_factor()),
+         }
+         return json.dumps(payload)
+ 
+ 
+ def build_report(
+     spec: StrategySpec,
+     zones_used: tuple[Zone, ...] | None,
+     costs: CostModel | None,
+     trials: int | None,
+     intrabar: IntrabarOrder,
+diff --git a/strategylab/strategy/examples.py b/strategylab/strategy/examples.py
+index 42fa6df..e6e752c 100644
+--- a/strategylab/strategy/examples.py
++++ b/strategylab/strategy/examples.py
+@@ -3,20 +3,21 @@ from __future__ import annotations
+ from collections import deque
+ from collections.abc import Mapping
+ from decimal import Decimal
+ 
+ from strategylab.broker.orders import Order, OrderKind, Side
+ from strategylab.core.bars import Bar
+ from strategylab.strategy.base import Strategy, StrategyState
+ from strategylab.strategy.flat_keltner import FlatKeltnerStrategy
+ from strategylab.strategy.sweep_liquidity import SweepLiquidityStrategy
+ from strategylab.strategy.trend_pullback import TrendPullbackStrategy
++from strategylab.strategy.two_sided_momentum import TwoSidedMomentumStrategy
+ 
+ 
+ class UnknownStrategy(Exception):
+     """Имя стратегии отсутствует в реестре."""
+ 
+ 
+ class SmaCrossStrategy:
+     """Пересечение двух скользящих средних: BUY на золотом, SELL на кресте смерти."""
+ 
+     name = "sma_cross"
+@@ -73,31 +74,34 @@ class BuyHoldStrategy:
+ # Реестр стратегий по именам: нужен там, где требуется сам класс, а не
+ # готовый экземпляр. `build` разбирает параметры по-своему (у `sma_cross`
+ # они обязательны), а инструменты вроде scripts/sweep.py берут из класса
+ # дефолты конструктора — иначе дефолтный параметр нечем заменить.
+ STRATEGY_CLASSES: dict[str, type[Strategy]] = {
+     "sma_cross": SmaCrossStrategy,
+     "buy_hold": BuyHoldStrategy,
+     "flat_keltner": FlatKeltnerStrategy,
+     "trend_pullback": TrendPullbackStrategy,
+     "sweep_liquidity": SweepLiquidityStrategy,
++    "two_sided_momentum": TwoSidedMomentumStrategy,
+ }
+ 
+ 
+ def build(name: str, params: Mapping[str, Decimal]) -> Strategy:
+     """Реестр стратегий: имя и параметры → экземпляр."""
+     if name == "sma_cross":
+         return SmaCrossStrategy(fast=params["fast"], slow=params["slow"])
+     if name == "buy_hold":
+         return BuyHoldStrategy()
+     if name == "flat_keltner":
+         return FlatKeltnerStrategy.from_params(params)
+     if name == "trend_pullback":
+         return TrendPullbackStrategy.from_params(params)
+     if name == "sweep_liquidity":
+         return SweepLiquidityStrategy.from_params(params)
++    if name == "two_sided_momentum":
++        return TwoSidedMomentumStrategy.from_params(params)
+     raise UnknownStrategy(name)
+ 
+ 
+ def _sma(values: deque[Decimal], n: int) -> Decimal:
+     window = list(values)[-n:]
+     return sum(window, Decimal("0")) / Decimal(len(window))
+diff --git a/strategylab/strategy/two_sided_momentum.py b/strategylab/strategy/two_sided_momentum.py
+new file mode 100644
+index 0000000..ff20f17
+--- /dev/null
++++ b/strategylab/strategy/two_sided_momentum.py
+@@ -0,0 +1,372 @@
++"""ДВУСТОРОННИЙ ИМПУЛЬС: двусторонний пробой канала Дончиана на 15m с ATR-стопом.
++
++Спека: strategydocs/spec_01_two_sided_momentum_20261022.md.
++
++Правила (спека §Правила): HH = max High последних `donch_len` ЗАВЕРШЁННЫХ
++15m-баров, LL = min Low тех же; LONG при Close(B) > HH, SHORT при Close(B) < LL,
++где HH/LL считаются по предшествующему окну — без сигнального бара B. Фильтр
++уклона — `bias_len`-сглаживание Уайлдера по Close 15m, `bias_len = 0` фильтр
++выключает. Дистанция стопа — `atr_mult` × ATR(14), ATR Уайлдера заморожен на
++баре-сигнале, поэтому ATR и bias считаются включая B.
++
++Поток данных тот же, что у остальных стратегий: стратегия получает 1m-бары и
++сама агрегирует 15m через `Aggregator` с якорем по эпохе; неполная группа в
++расчёт не попадает. `atr_len = 14` и `risk_frac = 0.01` — константы модуля,
++свободных параметров ровно три (Global Constraint 10).
++
++Реализовано (задачи 7–10): вход в обе стороны, зеркальный стоп-брекет,
++переворот встречным сигналом и трейлинг стопа. На закрытии 15m-бара B, когда
++окно готово, позиция плоская и исполнение не ожидается, `Close(B) > hh` или
++`Close(B) < ll` (при включённом фильтре уклона — соответственно и
++`Close(B) > bias` либо `Close(B) < bias`) порождает MARKET-заявку с размером
++`equity · risk_frac / (atr_mult · ATR)`; ATR морозится на баре сигнала. На баре
++исполнения входа вешается reduce_only STOP_MARKET по
++`close − atr_mult · ATR_замороженный` для лонга и `close + atr_mult · ATR` для
++шорта — стоп всегда с противоположной от входа стороны. Фиксированной цели в
++спеке нет — LIMIT не выдаётся никогда. Встречный пробой при открытой позиции
++переворачивает её одним MARKET объёма `abs(position) + qty` (задача 9): тот же
++брекетный путь вешает стоп новой ноги на баре исполнения. Трейлинг (задача 10):
++на каждом закрытом 15m-баре при открытой позиции без ожидания исполнения
++кандидат `max_high_с_входа − atr_mult · ATR_текущий` для лонга (зеркально
++`min_low_с_входа + atr_mult · ATR_текущий` для шорта) подаётся reduce_only
++STOP_MARKET на весь объём позиции, только если строго лучше текущего уровня —
++лонговый стоп не опускается, шортовый не поднимается. ATR для кандидата живой:
++заморозка «на баре-сигнале» остаётся только шириной стопа на входе. Переворот
++перезапускает трейлинг с экстремумов и уровня новой ноги (решение R2); снятие
++позиции без ожидания исполнения очищает состояние трейлинга.
++"""
++
++from __future__ import annotations
++
++from collections import deque
++from collections.abc import Mapping
++from decimal import Decimal
++
++from strategylab.broker.orders import Order, OrderKind, Side
++from strategylab.core.bars import Bar
++from strategylab.strategy.base import StrategyState
++from strategylab.strategy.indicators import (
++    FIFTEEN_MIN_COUNT,
++    FIFTEEN_MIN_WIDTH,
++    Aggregator,
++    Atr,
++    Rma,
++    positive,
++    positive_int,
++)
++
++_ZERO = Decimal("0")
++
++# Замороженные спекой величины: не параметры, константы (Global Constraint 10).
++_ATR_LEN = 14
++_RISK_FRAC = Decimal("0.01")
++
++
++class TwoSidedMomentumStrategy:
++    """Пробой Дончиана в обе стороны на закрытии 15m-бара, выход — ATR-стоп.
++
++    Состояние 15m-окна открыто наружу через `_hh`, `_ll`, `_atr_value` и
++    `_bias_value` (Decimal | None; None — окно ещё не полно): тесты читают их
++    напрямую, как `_lower`/`_adx` у FlatKeltnerStrategy. Исключение —
++    `_bias_value`: при `bias_len == 0` фильтр уклона выключен, и значение
++    остаётся `None` НАВСЕГДА ПО ЗАМЫСЛУ, а не как «не готов». Поэтому
++    выключенность фильтра проверяется по `self.bias_len == 0` /
++    `self._bias is None` (выключен — условия на bias нет), и только при
++    включённом фильтре `None` в `_bias_value` означает «ещё не готово»
++    (решение R9).
++    """
++
++    name = "two_sided_momentum"
++
++    PARAM_NAMES = ("donch_len", "atr_mult", "bias_len")
++
++    def __init__(
++        self,
++        donch_len: Decimal = Decimal("48"),
++        atr_mult: Decimal = Decimal("1.5"),
++        bias_len: Decimal = Decimal("48"),
++    ) -> None:
++        self._donch_len = positive_int(donch_len, "donch_len")
++        self._atr_mult = positive(atr_mult, "atr_mult")
++        self._bias_len: int
++        self._bias: Rma | None
++        if bias_len == _ZERO:
++            # Ноль — легальное значение сетки: фильтр уклона выключен.
++            # positive_int на нуле бросил бы ValueError, поэтому проверка до делегирования.
++            self._bias_len = 0
++            self._bias = None
++        else:
++            self._bias_len = positive_int(bias_len, "bias_len")
++            self._bias = Rma(self._bias_len)
++
++        self._m15 = Aggregator(FIFTEEN_MIN_WIDTH, FIFTEEN_MIN_COUNT)
++        self._atr = Atr(_ATR_LEN)
++        self._window: deque[tuple[Decimal, Decimal]] = deque(maxlen=self._donch_len)
++
++        self._closed_15m = 0
++        self._hh: Decimal | None = None
++        self._ll: Decimal | None = None
++        self._atr_value: Decimal | None = None
++        self._bias_value: Decimal | None = None
++        # Сигнал дан, ждём исполнения: сторона входа и ATR, замороженный на баре
++        # сигнала. Задача 8 заполнила обе стороны; задачи 9–10 их расширяют.
++        self._pending_entry: Side | None = None
++        self._pending_atr: Decimal | None = None
++        # Состояние трейлинга (задача 10): экстремумы high/low с бара исполнения
++        # входа и текущий уровень стопа, который знает только стратегия — движок
++        # не эхо-ит брокерский стоп. Заводятся на выдаче брекета (`_init_trailing`
++        # вызывается из `_bracket_orders`), обновляются на закрытых 15m-барах,
++        # сбрасываются при снятии позиции без ожидания исполнения. None —
++        # трейлинга нет (позиция плоская, нога ещё не исполнена).
++        self._since_high: Decimal | None = None
++        self._since_low: Decimal | None = None
++        self._stop_level: Decimal | None = None
++
++    @classmethod
++    def from_params(cls, params: Mapping[str, Decimal]) -> TwoSidedMomentumStrategy:
++        """Стратегия из реестра: известные параметры — свои значения, неизвестные — ошибка."""
++        unknown = sorted(set(params) - set(cls.PARAM_NAMES))
++        if unknown:
++            raise ValueError(f"неизвестные параметры two_sided_momentum: {unknown}")
++        kwargs = {name: params[name] for name in cls.PARAM_NAMES if name in params}
++        return cls(**kwargs)
++
++    @property
++    def bias_len(self) -> int:
++        """Параметр `bias_len` целым числом: 0 — фильтр уклона выключен."""
++        return self._bias_len
++
++    def on_bar(self, bar: Bar, state: StrategyState) -> list[Order]:
++        """Один 1m-бар: обновить агрегаты 15m, искать вход, вешать брекет.
++
++        Порядок как в FlatKeltnerStrategy.on_bar: сначала закрытие 15m-бара и
++        поиск сигнала входа (свежий вход — только при плоской позиции;
++        встречный сигнал при открытой — переворот одним MARKET, задача 9; при
++        ожидающем исполнении — молчание), затем — проверка, что выданный MARKET
++        уже исполнен: если позиция открыта в сторону ожидания (лонг при знаке
++        позиции > 0, шорт при < 0) и вход ожидается, на этом баре вешается
++        стоп-брекет и ожидающее состояние снимается.
++
++        Трейлинг (задача 10) живёт на закрытых 15m-барах: `_trailing_orders`
++        вызывается после поиска сигнала — на баре переворота pending уже
++        выставлен, и трейлинг прежней ноги молчит (жизненные циклы заявок
++        исключительны). Плоское состояние без ожидания снимает экстремумы и
++        уровень прежней ноги до остальной логики: мёртвого состояния трейлинга
++        не остаётся, чужими экстремумами `_trailing_orders` питаться не может.
++        """
++        orders: list[Order] = []
++        if state.position == 0 and self._pending_entry is None:
++            self._since_high = None
++            self._since_low = None
++            self._stop_level = None
++        bar15 = self._m15.update(bar)
++        if bar15 is not None:
++            self._update_15m(bar15)
++            entry = self._entry_order(bar15, state)
++            if entry is not None:
++                orders.append(entry)
++            orders.extend(self._trailing_orders(bar15, state))
++        pending = self._pending_entry
++        filled = (pending is Side.BUY and state.position > 0) or (
++            pending is Side.SELL and state.position < 0
++        )
++        if filled:
++            # Вход исполнен на этом баре: цена входа оценивается его закрытием.
++            self._pending_entry = None
++            atr_pending = self._pending_atr
++            self._pending_atr = None
++            if atr_pending is not None:
++                orders.extend(self._bracket_orders(bar, state, atr_pending))
++        return orders
++
++    def _entry_order(self, bar15: Bar, state: StrategyState) -> Order | None:
++        """Вход по пробою Дончиана в обе стороны: MARKET-ордер с размером по риску.
++
++        Сторона читается из сравнения close с каналом: `Close(B) > hh` — лонг,
++        `Close(B) < ll` — шорт; оба не выполняются одновременно (hh >= ll).
++        Готовность окна — по `_hh`/`_ll`/`_atr_value` (после границы warmup);
++        `_bias_value` в этой проверке НЕ участвует: при выключенном фильтре
++        (`bias_len == 0`) он `None` по замыслу, а не как «не готово»
++        (решение R9). Фильтр уклона добавляет условие по сторону сигнала —
++        Close(B) > bias для лонга и зеркальное Close(B) < bias для шорта, —
++        только когда включён (`self._bias is not None`), и тогда уже его `None`
++        честно означает «bias ещё не посчитан». К перевороту встречным сигналом
++        (задача 9) фильтр уклона применяется ровно так же, как к свежему входу.
++
++        Размер `qty = equity · _RISK_FRAC / (atr_mult · atr)`: риск на сделку
++        — _RISK_FRAC капитала, дистанция до стопа — atr_mult · ATR, ATR
++        замораживается на сигнальном баре в `_pending_atr`. Пока прошлое
++        исполнение ещё ожидается, сигнал молчит: не более одного ордера на
++        исполнение. При открытой позиции встречный сигнал переворачивает её
++        ОДНИМ ордером `abs(position) + qty` (задача 9), однонаправленный —
++        блокируется.
++        """
++        hh = self._hh
++        ll = self._ll
++        atr = self._atr_value
++        if hh is None or ll is None or atr is None or atr <= 0:
++            return None
++        if self._pending_entry is not None:
++            return None
++        if bar15.close > hh:
++            side: Side = Side.BUY
++        elif bar15.close < ll:
++            side = Side.SELL
++        else:
++            return None
++        if self._bias is not None:
++            bias = self._bias_value
++            if bias is None:
++                return None
++            if side is Side.BUY and bar15.close <= bias:
++                return None
++            if side is Side.SELL and bar15.close >= bias:
++                return None
++        if state.equity <= 0:
++            return None
++        qty = state.equity * _RISK_FRAC / (self._atr_mult * atr)
++        position = state.position
++        if position != 0:
++            # Переворот (задача 9): встречный сигнал снимает старую ногу и
++            # открывает новую одним MARKET — `abs(position) + qty`. Сигнал
++            # того же направления, что позиция, по-прежнему заблокирован:
++            # не наращиваем. Брекет новой ноги повесит на баре исполнения
++            # существующий путь — новой коды для этого здесь нет.
++            reversing = (position > 0 and side is Side.SELL) or (
++                position < 0 and side is Side.BUY
++            )
++            if not reversing:
++                return None
++            qty += abs(position)
++        self._pending_entry = side
++        self._pending_atr = atr
++        return Order(side, OrderKind.MARKET, qty, None, None, False)
++
++    def _bracket_orders(self, bar: Bar, state: StrategyState, entry_atr: Decimal) -> list[Order]:
++        """Стоп-брекет на баре исполнения входа: единственный выход, без цели.
++
++        Цена входа оценивается как close бара, на котором MARKET исполнен:
++        движок не отдаёт стратегии цену исполнения (решение 4 Flat-Кельтнера —
++        ошибка оценки равна одному проскальзыванию). Дистанция стопа — та же,
++        что закладывалась в размер: `atr_mult · entry_atr`, с ATR, замороженным
++        на сигнальном баре. Стоп зеркален позиции: под лонгом (`position > 0`,
++        заявка SELL) и над шортом (`position < 0`, заявка BUY, объём — модуль
++        позиции). LIMIT-ордера нет: фиксированной цели в спеке нет.
++        """
++        entry = bar.close
++        distance = self._atr_mult * entry_atr
++        position = state.position
++        if position > 0:
++            stop = entry - distance
++            self._init_trailing(entry, stop)
++            return [Order(Side.SELL, OrderKind.STOP_MARKET, position, None, stop, True)]
++        elif position < 0:
++            # Шорт: зеркало — стоп над входом, объём снят по модулю позиции.
++            stop = entry + distance
++            self._init_trailing(entry, stop)
++            return [Order(Side.BUY, OrderKind.STOP_MARKET, -position, None, stop, True)]
++        else:
++            # Ветка недостижима из on_bar: брекет вешается только на исполненном
++            # входе, а исполненный знак позиции ненулевой по построению.
++            # Плоскому вызову всё равно соответствует явное «ничего»:
++            # implicit else прятал бы рассогласование pending с движком (м16).
++            return []
++
++    def _init_trailing(self, entry_price: Decimal, stop: Decimal) -> None:
++        """Завести состояние трейлинга; момент заводки — выдача стоп-брекета.
++
++        Выбранный момент инициализации: экстремумы стартуют с оценки входа
++        (close бара исполнения — той же цены, от которой отмерен стоп), а
++        уровень — с выданного стопа. Движок не отдаёт стратегии ни цену
++        исполнения, ни брокерский стоп: единственный бар, где стратегия
++        достоверно знает и вход, и стоп, — выдача брекета. Группа входа
++        закроется позже, её фактические high/low доедут в экстремумы на
++        закрытии. На перевороте этот же вызов из брекетного пути
++        перезапускает трейлинг с экстремумов и уровня НОВОЙ ноги — прежняя
++        нога не протаскивает свои максимумы и минимумы через флип
++        (решение R2).
++        """
++        self._since_high = entry_price
++        self._since_low = entry_price
++        self._stop_level = stop
++
++    def _trailing_orders(self, bar15: Bar, state: StrategyState) -> list[Order]:
++        """Трейлинг ATR-стопа на закрытом 15m-баре при открытой позиции.
++
++        Спека §Правила: LONG stop = max(стоп, max High с входа − atr_mult·ATR),
++        только вверх; для шорта зеркально от min Low, только вниз. Экстремумы
++        обновляются баром B ДО вычисления кандидата (high бара входит в «max с
++        входа»), ATR берётся ТЕКУЩИЙ `_atr_value`, не замороженный: заморозка
++        «на баре-сигнале» остаётся шириной стопа на входе, трейлинг по спеке
++        живёт на живом значении. Заявка — reduce_only STOP_MARKET на весь
++        объём позиции, и только когда кандидат СТРОГО лучше уровня: на уровне
++        или хуже — пустой список, лонговый стоп не опускается, шортовый не
++        поднимается (без строгого «лучше» тот же уровень перезаказывался бы
++        каждый бар, и трейл превращался бы в дрейф стопа). Пока вход/брекет ожидается, трейлинг
++        молчит: `_pending_entry` исключает трейл из жизненного цикла заявки.
++        Без состояния (позиция исполнена, но брекет ещё не выдан — середина
++        бара исполнения; либо позиция снята — поля сброшены) и до границы
++        warmup (`_atr_value is None`) — тоже пустой список.
++        """
++        if state.position == 0 or self._pending_entry is not None:
++            return []
++        since_high = self._since_high
++        since_low = self._since_low
++        level = self._stop_level
++        atr = self._atr_value
++        if since_high is None or since_low is None or level is None or atr is None:
++            return []
++        position = state.position
++        if position > 0:
++            self._since_high = since_high = max(since_high, bar15.high)
++            candidate = since_high - self._atr_mult * atr
++            if candidate > level:
++                self._stop_level = candidate
++                return [
++                    Order(Side.SELL, OrderKind.STOP_MARKET, position, None, candidate, True)
++                ]
++            return []
++        elif position < 0:
++            self._since_low = since_low = min(since_low, bar15.low)
++            candidate = since_low + self._atr_mult * atr
++            if candidate < level:
++                self._stop_level = candidate
++                return [
++                    Order(Side.BUY, OrderKind.STOP_MARKET, -position, None, candidate, True)
++                ]
++            return []
++        else:
++            # Как и в _bracket_orders (м16): знак нуля сюда недостижим из
++            # on_bar — первый страж уже отсёк плоскую позицию, — но ветка
++            # обязана быть явной, а не implicit else.
++            return []
++
++    def _update_15m(self, bar15: Bar) -> None:
++        """Закрытый 15m-бар B: ATR и bias включая B, Дончиан по окну без B.
++
++        Порядок фиксации спеки: hh/ll считаются по содержимому окна ДО
++        добавления B (последние `donch_len` завершённых баров перед сигналом),
++        ATR и bias — включая B: сигнальный бар и есть бар B, а стоп
++        замораживается на нём.
++
++        Состояние наружу — только после границы warmup: должно пройти
++        `max(donch_len, _ATR_LEN)` закрытых 15m-баров, сигнальным становится
++        следующий за ними. Со стороны Дончиана это следует из определения
++        сигнала (hh/ll берутся из `donch_len` баров, завершившихся ДО сигнала),
++        со стороны ATR — с запасом в один бар: `Atr` даёт первое значение уже
++        на 14-м закрытом баре, но тест warmup закрепил `None` до границы
++        включительно. До границы все четыре значения `None`, неполное окно не
++        бросает: warmup молча не торгует.
++        """
++        self._closed_15m += 1
++        atr = self._atr.update(bar15.high, bar15.low, bar15.close)
++        bias: Decimal | None = None
++        if self._bias is not None:
++            bias = self._bias.update(bar15.close)
++        if atr is not None and self._closed_15m > max(self._donch_len, _ATR_LEN):
++            self._atr_value = atr
++            self._hh = max(hi for hi, _ in self._window)
++            self._ll = min(lo for _, lo in self._window)
++            if bias is not None:
++                self._bias_value = bias
++        self._window.append((bar15.high, bar15.low))
+diff --git a/tests/test_broker_sim.py b/tests/test_broker_sim.py
+index 3271e64..5d2e2b4 100644
+--- a/tests/test_broker_sim.py
++++ b/tests/test_broker_sim.py
+@@ -729,10 +729,73 @@ def test_partial_target_does_not_overwhelm_a_stop_on_the_same_bar() -> None:
+     costs = CostModel()
+     b = _open_bracketed_long()
+ 
+     fills = b.apply_bar(_bar((1717201200, "100", "108", "94", "100")))
+ 
+     assert [f.reason for f in fills] == ["stop"]
+     assert [f.qty for f in fills] == [Decimal("20")]
+     assert fills[0].price == Decimal("95") * (Decimal(1) - costs.slippage)
+     assert not b.position.is_open
+     assert b.pending_orders == []
++
++
++def test_second_stop_submit_replaces_the_resting_mirror() -> None:
++    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
++    b.submit(Order(Side.BUY, OrderKind.MARKET, Decimal("1"), None, None, False))
++    b.apply_bar(_bar((1, "100", "101", "99", "100")))
++    b.submit(Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("95"), True))
++    b.submit(Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("98"), True))
++    stops = [o for o in b.pending_orders if o.kind is OrderKind.STOP_MARKET]
++    assert len(stops) == 1 and stops[0].stop_price == Decimal("98")
++    assert b.position.stop_price == Decimal("98")
++
++
++def test_limit_mirror_is_not_deduplicated() -> None:
++    # Две reduce_only LIMIT разных объёмов — разные цели: движок обязан оставить обе.
++    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
++    b.submit(Order(Side.BUY, OrderKind.MARKET, Decimal("1"), None, None, False))
++    b.apply_bar(_bar((1, "100", "101", "99", "100")))
++    b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("0.4"), Decimal("105"), None, True))
++    b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("0.6"), Decimal("110"), None, True))
++    assert len([o for o in b.pending_orders if o.kind is OrderKind.LIMIT]) == 2
++
++
++# Трейлинг ATR-стопа после входа (задача 10): гэп и лестница перезаказов
++
++
++def test_short_trailing_stop_fills_on_gap_up() -> None:
++    """Гэп выше resting-СТОПа шорта: PESSIMISTIC выбивает стоп по open бара.
++
++    Шорт открыт MARKET SELL (исполнение по close первого бара), поверх него
++    отдыхает reduce-only BUY STOP_MARKET на 96 — уровень трейла. Второй бар
++    открывается на 99, то есть гэпом ВЫШЕ стопа, а high 101 доходит до уровня
++    лишь из гэпа: стоп обязан исполниться по open, а не по 96.
++    """
++    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
++    b.submit(Order(Side.SELL, OrderKind.MARKET, Decimal("1"), None, None, False))
++    b.apply_bar(_bar((1, "99", "101", "94", "100")))
++    assert (b.position.side, b.position.qty) == (Side.SELL, Decimal("1"))
++    b.submit(Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("96"), True))
++    fills = b.apply_bar(_bar((2, "99", "101", "94", "100")))
++    assert fills[0].reason == "stop"
++    assert fills[0].price > Decimal("96")
++
++
++def test_ten_trailing_stop_resubmits_leave_one_resting_order() -> None:
++    """Лестница из десяти перезаказов трейла: в очереди остаётся один стоп.
++
++    Dedup Task 5 под нагрузкой: каждый следующий reduce-only STOP_MARKET той
++    же стороны вытесняет предыдущего предшественника, накопления нет.
++    """
++    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
++    b.submit(Order(Side.SELL, OrderKind.MARKET, Decimal("1"), None, None, False))
++    b.apply_bar(_bar((1, "99", "101", "94", "100")))
++    for level in range(10):
++        b.submit(
++            Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal(level), True)
++        )
++    stops = [o for o in b.pending_orders if o.kind is OrderKind.STOP_MARKET]
++    assert len(b.pending_orders) == 1
++    assert stops == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("9"), True)
++    ]
++    assert b.position.stop_price == Decimal("9")
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index 70a7d91..8b072f6 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -94,33 +94,45 @@ def test_run_prints_both_reports_and_verdict(tmp_path: Path, capsys) -> None:
+             "intrabar: PESSIMISTIC",
+             "trades: 1",
+             "wins: 0",
+             "losses: 1",
+             "net_pnl: -127.083013460",
+             "equity: 9872.916986540",
+             "max_drawdown: 127.083013460",
+             "profit_factor: 0",
+             "win_rate: 0",
+             "sharpe: null",
++            "long_trades: 1",
++            "long_net_pnl: -127.083013460",
++            "long_profit_factor: 0",
++            "short_trades: 0",
++            "short_net_pnl: 0",
++            "short_profit_factor: null",
+         ]
+         + header_lines(spec.version)
+         + [
+             "intrabar: OPTIMISTIC",
+             "trades: 1",
+             "wins: 0",
+             "losses: 1",
+             "net_pnl: -127.083013460",
+             "equity: 9872.916986540",
+             "max_drawdown: 127.083013460",
+             "profit_factor: 0",
+             "win_rate: 0",
+             "sharpe: null",
++            "long_trades: 1",
++            "long_net_pnl: -127.083013460",
++            "long_profit_factor: 0",
++            "short_trades: 0",
++            "short_net_pnl: 0",
++            "short_profit_factor: null",
+         ]
+         + ["ВЕРДИКТ: измерима"]
+     )
+     assert out.splitlines() == expected
+ 
+ 
+ def test_run_parses_strategy_params_as_decimal_strings(tmp_path: Path, capsys) -> None:
+     db = tmp_path / "bars.db"
+     make_db(db)
+     main(
+@@ -136,24 +148,24 @@ def test_run_parses_strategy_params_as_decimal_strings(tmp_path: Path, capsys) -
+             "fast=2",
+             "--param",
+             "slow=3",
+         ]
+     )
+     lines = capsys.readouterr().out.splitlines()
+     spec = make_spec("sma_cross", {"fast": Decimal("2"), "slow": Decimal("3")})
+     assert lines[0:4] == header_lines(spec.version)
+     assert lines[4] == "intrabar: PESSIMISTIC"
+     assert lines[5] == "trades: 0"
+-    assert lines[14:18] == header_lines(spec.version)
+-    assert lines[18] == "intrabar: OPTIMISTIC"
+-    assert lines[19] == "trades: 0"
+-    assert lines[28] == "ВЕРДИКТ: измерима"
++    assert lines[20:24] == header_lines(spec.version)
++    assert lines[24] == "intrabar: OPTIMISTIC"
++    assert lines[25] == "trades: 0"
++    assert lines[40] == "ВЕРДИКТ: измерима"
+ 
+ 
+ # run: начальный капитал контракта
+ 
+ # Серия для flat_keltner: пила без направления (ADX держится нулём) и проколка
+ # вниз в последней минуте 15m-бара — это сигнал на вход.
+ FLAT_WARMUP = 1529
+ FLAT_TAIL = 30
+ FLAT_END_TS = START_TS + 60 * (FLAT_WARMUP + 1 + FLAT_TAIL)
+ FLAT_PRICE = Decimal("100")
+@@ -235,49 +247,49 @@ def _flat_argv(db: Path, *extra: str) -> list[str]:
+ 
+ def test_run_trades_when_capital_is_given(tmp_path: Path, capsys) -> None:
+     """С капиталом риск-сайзинг открывает позицию: сделка есть, капитал в equity."""
+     db = tmp_path / "flat.db"
+     make_flat_db(db)
+ 
+     main(_flat_argv(db, "--capital", "10000"))
+ 
+     lines = capsys.readouterr().out.splitlines()
+     assert lines[5] == "trades: 1"
+-    assert lines[19] == "trades: 1"
++    assert lines[25] == "trades: 1"
+     # Капитал в equity: 10000 старта и −8.8 по сделке (комиссии обеих сторон
+     # и увод сведённого филла), просадка — от капитала.
+     assert lines[9] == "equity: 9991.200000000"
+     assert lines[10] == "max_drawdown: 8.800000000"
+ 
+ 
+ def test_run_without_capital_trades_by_default(tmp_path: Path, capsys) -> None:
+     """Без флага капитал дефолтный: стратегия с риск-сайзингом торгует."""
+     db = tmp_path / "flat.db"
+     make_flat_db(db)
+ 
+     main(_flat_argv(db))
+ 
+     lines = capsys.readouterr().out.splitlines()
+     assert lines[5] == "trades: 1"
+-    assert lines[19] == "trades: 1"
++    assert lines[25] == "trades: 1"
+ 
+ 
+ def test_run_does_not_trade_with_zero_capital(tmp_path: Path, capsys) -> None:
+     """Капитал 0 — прогон без капитала: размер сделки нулевой, сделок нет."""
+     db = tmp_path / "flat.db"
+     make_flat_db(db)
+ 
+     main(_flat_argv(db, "--capital", "0"))
+ 
+     lines = capsys.readouterr().out.splitlines()
+     assert lines[5] == "trades: 0"
+-    assert lines[19] == "trades: 0"
++    assert lines[25] == "trades: 0"
+     assert lines[9] == "equity: 0"
+ 
+ 
+ def test_run_rejects_a_capital_that_is_not_a_decimal(tmp_path: Path) -> None:
+     """Капитал не Decimal-строка — ошибка argparse с кодом 2."""
+     db = tmp_path / "flat.db"
+     make_flat_db(db)
+ 
+     with pytest.raises(SystemExit) as exit_info:
+         main(_flat_argv(db, "--capital", "десять тысяч"))
+diff --git a/tests/test_engine_trades.py b/tests/test_engine_trades.py
+index a378763..59f8a66 100644
+--- a/tests/test_engine_trades.py
++++ b/tests/test_engine_trades.py
+@@ -208,10 +208,38 @@ def test_fork_with_recording_reports_trades_per_branch() -> None:
+     )
+ 
+     for plain, with_trades in (
+         (fork.pessimistic, recorded.pessimistic),
+         (fork.optimistic, recorded.optimistic),
+     ):
+         assert with_trades.spec_version == plain.spec_version
+         assert with_trades.metrics.net_pnl == plain.metrics.net_pnl
+         assert len(with_trades.trades) == 1
+         assert with_trades.trades[0].pnl == with_trades.metrics.net_pnl
++
++
++# Bucket стороны: сделка принадлежит стороне позиции, а не закрывающего филла
++
++
++def test_short_trade_lands_in_short_bucket() -> None:
++    metrics = _run({0: [_market(Side.SELL, "1")], 2: [_market(Side.BUY, "1")]}, None)
++    assert metrics.short.trades == 1
++    assert metrics.long.trades == 0
++    assert metrics.short.net_pnl == metrics.net_pnl
++    assert metrics.long.net_pnl + metrics.short.net_pnl == metrics.net_pnl
++
++
++def test_window_close_is_bucketed_by_position_side() -> None:
++    # Стратегия открывает шорт и больше ничего: движок сводит окно на последнем баре.
++    metrics = _run({0: [_market(Side.SELL, "1")]}, None)
++    assert metrics.short.trades == 1 and metrics.long.trades == 0
++    assert metrics.short.net_pnl == metrics.net_pnl
++
++
++def test_reversal_bucket_split_and_sum() -> None:
++    # бар 0: лонг 1; бар 2: SELL 2 = закрыть лонг и открыть шорт; дальше шорт живёт
++    # до конца ленты, и окно сводит движок.
++    metrics = _run({0: [_market(Side.BUY, "1")], 2: [_market(Side.SELL, "2")]}, TradeLog())
++    assert metrics.long.trades == 1  # закрытая часть переворота
++    assert metrics.short.trades == 1  # шорт, закрытый сведением окна
++    assert metrics.trades == 2
++    assert metrics.long.net_pnl + metrics.short.net_pnl == metrics.net_pnl
+diff --git a/tests/test_examples.py b/tests/test_examples.py
+index 6e59b39..44eda29 100644
+--- a/tests/test_examples.py
++++ b/tests/test_examples.py
+@@ -30,20 +30,25 @@ def _order_indices(result: list[tuple[int, list[Order]]]) -> list[int]:
+ def test_build_returns_sma_cross_with_params() -> None:
+     s = build("sma_cross", {"fast": Decimal("10"), "slow": Decimal("30")})
+     assert s.name == "sma_cross"
+ 
+ 
+ def test_build_returns_buy_hold() -> None:
+     s = build("buy_hold", {})
+     assert s.name == "buy_hold"
+ 
+ 
++def test_build_returns_two_sided_momentum() -> None:
++    s = build("two_sided_momentum", {})
++    assert s.name == "two_sided_momentum"
++
++
+ def test_build_unknown_name_raises() -> None:
+     with pytest.raises(UnknownStrategy):
+         build("нет_такой", {})
+ 
+ 
+ @pytest.mark.parametrize(
+     ("fast", "slow"),
+     [
+         (Decimal("10"), Decimal("0")),
+         (Decimal("10"), Decimal("-5")),
+diff --git a/tests/test_gates.py b/tests/test_gates.py
+new file mode 100644
+index 0000000..9d21aad
+--- /dev/null
++++ b/tests/test_gates.py
+@@ -0,0 +1,426 @@
++"""Тесты `scripts/gates.py`: пять гейтов спеки 01 по CSV-развёрткам.
++
++Скрипты вне пакета (`scripts/` — не пакет) загружаются через importlib, как в
++`test_sweep.py`; фикстуры — синтетические CSV в tmp_path, база не открывается.
++
++Проверяемые ловушки из брифа задачи 12:
++- `null` в `profit_factor` ранжируется ВЫШЕ любого числа (бесконечный PF),
++  а не как ноль и не выбрасывается — иначе медиана считается неверно;
++- гейт 1 различает исходы `<30` («расширять спек») и `30–99` («не пройден»);
++- дефолтный ряд опознаётся по значениям трёх именных колонок, порядок строк
++  в CSV не влияет;
++- парсер читает BOM, обрывает таблицу на первой пустой строке (хвост
++  `комбинаций:` / `отклонено:` не становится строкой сетки);
++- гейт 5 помечает `одно-система` и не переворачивает строку вердикта.
++"""
++
++from __future__ import annotations
++
++import importlib.util
++import sys
++from decimal import Decimal
++from pathlib import Path
++from types import ModuleType
++
++_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "gates.py"
++
++
++def _load_gates() -> ModuleType:
++    """Загрузка скрипта вне пакета: scripts/ — не пакет.
++
++    Модуль регистрируется в `sys.modules` до исполнения: `@dataclass` с
++    аннотациями-строками (`from __future__ import annotations`) резолвит их
++    через `sys.modules[cls.__module__]`, а importlib без регистрации оставляет
++    там None.
++    """
++    spec = importlib.util.spec_from_file_location("gates_script", _SCRIPT)
++    assert spec is not None
++    assert spec.loader is not None
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++gates = _load_gates()
++
++CSV_HEADER = (
++    "spec_version,donch_len,atr_mult,bias_len,trades,wins,net_pnl,max_drawdown,"
++    "profit_factor,sharpe,long_trades,long_net_pnl,long_profit_factor,"
++    "short_trades,short_net_pnl,short_profit_factor"
++)
++
++# Порядок как у sweep.py: имена в порядке --param, значения по возрастанию.
++COMBOS = [
++    (donch, atr, bias)
++    for donch in ("24", "48", "96")
++    for atr in ("1.0", "1.5", "2.0")
++    for bias in ("0", "48")
++]
++DEFAULT_CELLS = ("48", "1.5", "48")
++DEFAULT_INDEX = COMBOS.index(DEFAULT_CELLS)  # 9 — не первый и не последний
++
++
++def _header_lines(*, pessimistic: bool = True) -> list[str]:
++    """Десять строк шапки развёртки в формате `ключ: значение`."""
++    lines = [
++        "strategy: two_sided_momentum",
++        "symbol: TESTUSDT",
++        "window: [1761523200, 1790294400)",
++        "capital: 10000",
++        "grid: donch_len=24,48,96; atr_mult=1.0,1.5,2.0; bias_len=0,48",
++        "spec_version (база): v-base",
++        "zones_used: fit",
++        "costs: taker_fee=0.0005 maker_fee=0.0002 slippage=0.0005 leverage=1",
++        "touches: holdout=0, live=0",
++    ]
++    lines.append("intrabar: PESSIMISTIC" if pessimistic else "intrabar: OPTIMISTIC")
++    return lines
++
++
++def _cells(
++    combo: tuple[str, str, str],
++    **overrides: str,
++) -> list[str]:
++    """Строка CSV: базовые метрики «всё проходит», перекрытия — именованные."""
++    base = {
++        "trades": "100",
++        "wins": "50",
++        "net_pnl": "500",
++        "max_drawdown": "50",
++        "profit_factor": "1.5",
++        "sharpe": "1.0",
++        "long_trades": "60",
++        "long_net_pnl": "300",
++        "long_profit_factor": "1.4",
++        "short_trades": "40",
++        "short_net_pnl": "200",
++        "short_profit_factor": "1.6",
++    }
++    base.update(overrides)
++    donch, atr, bias = combo
++    version = f"v-{donch}-{atr}-{bias}"
++    return [
++        version,
++        donch,
++        atr,
++        bias,
++        base["trades"],
++        base["wins"],
++        base["net_pnl"],
++        base["max_drawdown"],
++        base["profit_factor"],
++        base["sharpe"],
++        base["long_trades"],
++        base["long_net_pnl"],
++        base["long_profit_factor"],
++        base["short_trades"],
++        base["short_net_pnl"],
++        base["short_profit_factor"],
++    ]
++
++
++def _grid_rows(default_overrides: dict[str, str] | None = None) -> list[list[str]]:
++    """18 строк сетки: перекрытия применяются только к ряду дефолтной комбинации."""
++    rows = []
++    for index, combo in enumerate(COMBOS):
++        overrides = default_overrides if index == DEFAULT_INDEX else None
++        rows.append(_cells(combo, **(overrides or {})))
++    return rows
++
++
++def _write_csv(
++    path: Path,
++    rows: list[list[str]],
++    *,
++    pessimistic: bool = True,
++    bom: bool = False,
++) -> Path:
++    """Файл как печатает sweep.py: шапка, заголовок, строки, пустая строка, хвост."""
++    lines = _header_lines(pessimistic=pessimistic)
++    lines.append(CSV_HEADER)
++    lines.extend(",".join(row) for row in rows)
++    lines.append("")
++    lines.append(f"комбинаций: {len(rows) + 9}")
++    lines.append("отклонено: 9")
++    lines.append("elapsed: 21.00s")
++    text = "\n".join(lines) + "\n"
++    path.write_text(text, encoding="utf-8-sig" if bom else "utf-8")
++    return path
++
++
++def _fold(tmp_path: Path, name: str, **overrides: str) -> Path:
++    """CSV фолда: одна строка дефолтной комбинации с перекрытыми метриками."""
++    return _write_csv(tmp_path / name, [_cells(DEFAULT_CELLS, **overrides)])
++
++
++def _passing_fixture(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
++    """BTC/ETH-сетки и три фолда, на которых все гейты 1–4 проходят."""
++    btc = _write_csv(tmp_path / "btc.csv", _grid_rows())
++    eth = _write_csv(tmp_path / "eth.csv", _grid_rows())
++    folds = [_fold(tmp_path, f"fold{index}.csv") for index in (1, 2, 3)]
++    return btc, eth, folds
++
++
++def _line(lines: list[str], prefix: str) -> str:
++    """Первая строка вывода с данным началом: таблица стабильна по префиксам."""
++    return next(line for line in lines if line.startswith(prefix))
++
++
++def test_parse_sweep_reads_table_stops_at_empty_line(tmp_path: Path) -> None:
++    """18 строк таблицы; хвост после пустой строки строками не считается."""
++    path = _write_csv(tmp_path / "grid.csv", _grid_rows())
++    rows = gates.parse_sweep(path)
++    assert len(rows) == 18
++    first = rows[0]
++    assert first.params == {
++        "donch_len": Decimal("24"),
++        "atr_mult": Decimal("1.0"),
++        "bias_len": Decimal("0"),
++    }
++    assert first.net_pnl == Decimal("500")
++    assert first.profit_factor == Decimal("1.5")
++    assert first.long_trades == 60
++    assert first.short_profit_factor == Decimal("1.6")
++
++
++def test_parse_sweep_null_profit_factor_is_none_not_zero(tmp_path: Path) -> None:
++    """Маркер `null` читается как None: ноль обвинял бы безубыточную комбинацию."""
++    rows = [_cells(combo, profit_factor="null") for combo in COMBOS]
++    path = _write_csv(tmp_path / "grid.csv", rows)
++    parsed = gates.parse_sweep(path)
++    assert all(row.profit_factor is None for row in parsed)
++
++
++def test_parse_sweep_handles_bom(tmp_path: Path) -> None:
++    """Файл с BOM (кто-то перенаправил через `>`) читается тем же парсером."""
++    path = _write_csv(tmp_path / "grid.csv", _grid_rows(), bom=True)
++    assert len(gates.parse_sweep(path)) == 18
++
++
++def test_parse_sweep_requires_pessimistic_header(tmp_path: Path) -> None:
++    """Числа берутся из пессимистичной развёртки: OPTIMISTIC в шапке — ошибка."""
++    path = _write_csv(tmp_path / "grid.csv", _grid_rows(), pessimistic=False)
++    try:
++        gates.parse_sweep(path)
++    except ValueError as error:
++        assert "PESSIMISTIC" in str(error)
++    else:
++        raise AssertionError("ожидался ValueError про пессимистичную шапку")
++
++
++def test_median_finite_odd_and_even() -> None:
++    """Медиана: нечётная — середина; чётная — среднее двух средних."""
++    values = [Decimal(x) for x in ("1", "2", "3")]
++    assert gates.median_pf(values) == Decimal("2")
++    values = [Decimal(x) for x in ("1", "2", "3", "4")]
++    assert gates.median_pf(values) == Decimal("2.5")
++    try:
++        gates.median_pf([])
++    except ValueError:
++        pass
++    else:
++        raise AssertionError("ожидался ValueError на пустом списке")
++
++
++def test_median_null_ranks_above_every_number() -> None:
++    """null = бесконечность: ранжируется выше чисел, не ноль и не выброс."""
++    one = Decimal("1")
++    two = Decimal("2")
++    # Три ряда: [1, 2, ∞] — середина конечна.
++    assert gates.median_pf([one, two, None]) == two
++    # Четыре ряда: [1, 2, ∞, ∞] — правая средняя бесконечна → медиана ∞.
++    assert gates.median_pf([one, two, None, None]) is None
++    # Один ряд: [∞] → медиана ∞ (при «ноле» было бы 0, при «выбросе» — пусто).
++    assert gates.median_pf([None]) is None
++    # [1, ∞] — среднее конечного и бесконечного ряда бесконечно.
++    assert gates.median_pf([one, None]) is None
++    # None не мешает конечной середине: [1, 2, 3, ∞] → (2+3)/2 = 2.5.
++    assert gates.median_pf([one, two, Decimal("3"), None]) == Decimal("2.5")
++
++
++def test_evaluate_all_pass_table_and_verdict(tmp_path: Path) -> None:
++    """Зелёный сценарий: пять строк гейтов, строка null-счёта, вердикт пройдено."""
++    btc, eth, folds = _passing_fixture(tmp_path)
++    lines = gates.evaluate(btc, eth, folds)
++    for prefix in ("гейт 1", "гейт 2", "гейт 3", "гейт 4", "гейт 5"):
++        assert _line(lines, prefix)
++    assert _line(lines, "null-рядов").count("BTC=0") == 1
++    assert lines[-1] == "ГЕЙТЫ: пройдены"
++
++
++def test_gate1_exactly_100_passes_99_fails(tmp_path: Path) -> None:
++    """Границы гейта 1: 100 (60+40) проходит, 99 (59+40) — «не пройден»."""
++    btc, eth, folds = _passing_fixture(tmp_path)
++    lines = gates.evaluate(btc, eth, folds)
++    assert "пройден" in _line(lines, "гейт 1")
++    rows = _grid_rows({"long_trades": "59"})
++    btc = _write_csv(tmp_path / "btc99.csv", rows)
++    lines = gates.evaluate(btc, eth, folds)
++    line = _line(lines, "гейт 1")
++    assert "не пройден" in line
++    assert "расширять спек" not in line
++    assert lines[-1] == "ГЕЙТЫ: не пройдены"
++
++
++def test_gate1_below_30_prints_expand(tmp_path: Path) -> None:
++    """Третий pre-registered исход гейта 1: <30 — «расширять спек», ровно 30 — нет."""
++    _, eth, folds = _passing_fixture(tmp_path)
++    low = _grid_rows({"long_trades": "16", "short_trades": "13"})  # 29
++    mid = _grid_rows({"long_trades": "17", "short_trades": "13"})  # 30
++    btc_low = _write_csv(tmp_path / "btc29.csv", low)
++    btc_mid = _write_csv(tmp_path / "btc30.csv", mid)
++    line = _line(gates.evaluate(btc_low, eth, folds), "гейт 1")
++    assert "расширять спек" in line
++    assert "не пройден" not in line
++    line = _line(gates.evaluate(btc_mid, eth, folds), "гейт 1")
++    assert "не пройден" in line
++    assert "расширять спек" not in line
++
++
++def test_gate2_nulls_rank_above_makes_median_infinite(tmp_path: Path) -> None:
++    """9 рядов по 0.5 + 9 null: медиана ∞ и гейт пройден; счётчик null напечатан."""
++    _, eth, folds = _passing_fixture(tmp_path)
++    rows = [
++        _cells(combo, profit_factor="null" if index < 9 else "0.5")
++        for index, combo in enumerate(COMBOS)
++    ]
++    btc = _write_csv(tmp_path / "btc_nulls.csv", rows)
++    lines = gates.evaluate(btc, eth, folds)
++    line = _line(lines, "гейт 2")
++    assert "∞" in line
++    assert "пройден" in line
++    assert _line(lines, "null-рядов").startswith("null-рядов: BTC=9, ETH=0")
++    # null-ряды сохранены в числе строк сетки, а не выброшены из медианы.
++    assert "BTC=18" in lines[0]
++
++
++def test_gate2_median_below_threshold_fails(tmp_path: Path) -> None:
++    """Все 18 PF = 1.0 → медиана 1.0 < 1.15 → «не пройден»."""
++    _, eth, folds = _passing_fixture(tmp_path)
++    rows = [_cells(combo, profit_factor="1.0") for combo in COMBOS]
++    btc = _write_csv(tmp_path / "btc_low.csv", rows)
++    lines = gates.evaluate(btc, eth, folds)
++    assert "не пройден" in _line(lines, "гейт 2")
++    assert lines[-1] == "ГЕЙТЫ: не пройдены"
++
++
++def test_default_row_found_by_columns_not_index(tmp_path: Path) -> None:
++    """Дефолт ищется по трём колонкам: сдвиг списка строк не меняет гейт 3."""
++    _, eth, folds = _passing_fixture(tmp_path)
++    rows = _grid_rows({"profit_factor": "1.2"})
++    rotated = rows[7:] + rows[:7]  # дефолтный ряд уехал с позиции 9
++    btc = _write_csv(tmp_path / "btc_rot.csv", rotated)
++    lines = gates.evaluate(btc, eth, folds)
++    assert "1.2" in _line(lines, "гейт 3")
++    assert "не пройден" in _line(lines, "гейт 3")
++    assert "1.5" in _line(lines, "гейт 2")
++
++
++def test_gate3_infinite_default_pf_passes(tmp_path: Path) -> None:
++    """Гейт 3: null PF дефолта = бесконечное преимущество → пройден, напечатан ∞."""
++    _, eth, folds = _passing_fixture(tmp_path)
++    rows = _grid_rows({"profit_factor": "null"})
++    btc = _write_csv(tmp_path / "btc_inf.csv", rows)
++    lines = gates.evaluate(btc, eth, folds)
++    line = _line(lines, "гейт 3")
++    assert "∞" in line
++    assert "пройден" in line
++
++
++def test_missing_or_duplicate_default_row_raises(tmp_path: Path) -> None:
++    """Дефолтный ряд обязан быть ровно один: 0 или 2 совпадения — ошибка."""
++    without = [row for row in _grid_rows() if tuple(row[1:4]) != DEFAULT_CELLS]
++    path = _write_csv(tmp_path / "grid.csv", without)
++    try:
++        gates.find_default_row(list(gates.parse_sweep(path)), "тест")
++    except ValueError as error:
++        assert "нет" in str(error)
++    else:
++        raise AssertionError("ожидался ValueError про отсутствие дефолта")
++    dup_rows = _grid_rows() + [_cells(DEFAULT_CELLS)]
++    dup_rows[-1][0] = "v-duplicate"
++    path = _write_csv(tmp_path / "dup.csv", dup_rows)
++    try:
++        gates.find_default_row(list(gates.parse_sweep(path)), "тест")
++    except ValueError as error:
++        assert "несколько" in str(error)
++    else:
++        raise AssertionError("ожидался ValueError про дубликат дефолта")
++
++
++def test_gate4_two_of_three_folds_positive(tmp_path: Path) -> None:
++    """Гейт 4: 2 из 3 фолдов с net_pnl > 0 проходят, 1 из 3 — нет."""
++    btc, eth, _ = _passing_fixture(tmp_path)
++    folds = [
++        _fold(tmp_path, "fold1.csv", net_pnl="500"),
++        _fold(tmp_path, "fold2.csv", net_pnl="-100"),
++        _fold(tmp_path, "fold3.csv", net_pnl="1"),
++    ]
++    lines = gates.evaluate(btc, eth, folds)
++    line = _line(lines, "гейт 4")
++    assert "пройдено" in line
++    assert "2 из 3" in line
++    bad_folds = [
++        _fold(tmp_path, "bad1.csv", net_pnl="-1"),
++        _fold(tmp_path, "bad2.csv", net_pnl="0"),
++        _fold(tmp_path, "bad3.csv", net_pnl="500"),
++    ]
++    lines = gates.evaluate(btc, eth, bad_folds)
++    assert "не пройдено" in _line(lines, "гейт 4")
++    assert lines[-1] == "ГЕЙТЫ: не пройдены"
++
++
++def test_gate4_fold_row_found_by_columns_among_several(tmp_path: Path) -> None:
++    """В CSV фолда может быть несколько строк: берётся дефолт по колонкам."""
++    btc, eth, _ = _passing_fixture(tmp_path)
++    fold_rows = [
++        _cells(("24", "1.0", "0"), net_pnl="-999"),  # не дефолт, первым рядом
++        _cells(DEFAULT_CELLS, net_pnl="500"),
++    ]
++    fold = _write_csv(tmp_path / "fold.csv", fold_rows)
++    lines = gates.evaluate(btc, eth, [fold, fold, fold])
++    assert "пройдено" in _line(lines, "гейт 4")
++    assert "-999" not in _line(lines, "гейт 4")
++
++
++def test_gate5_zero_side_not_published_verdict_unchanged(tmp_path: Path) -> None:
++    """Гейт 5: trades одной стороны 0 → «не опубликована», вердикт гейтов 1–4 не тронут."""
++    _, eth, folds = _passing_fixture(tmp_path)
++    # Сумма сторон остаётся 100: проваливается только публикация гейта 5.
++    btc = _write_csv(tmp_path / "btc0.csv", _grid_rows({"long_trades": "0", "short_trades": "100"}))
++    lines = gates.evaluate(btc, eth, folds)
++    assert "не опубликована" in _line(lines, "гейт 5")
++    assert lines[-1] == "ГЕЙТЫ: пройдены"
++
++
++def test_gate5_one_system_annotation_never_flips_verdict(tmp_path: Path) -> None:
++    """Пометка `одно-система` при провале одной стороны — вердикт остаётся «пройдены»."""
++    _, eth, folds = _passing_fixture(tmp_path)
++    btc = _write_csv(
++        tmp_path / "btc.csv",
++        _grid_rows({"long_net_pnl": "-100", "short_net_pnl": "600"}),
++    )
++    lines = gates.evaluate(btc, eth, folds)
++    line = _line(lines, "гейт 5")
++    assert "одно-система" in line
++    assert "BTC" in line
++    assert lines[-1] == "ГЕЙТЫ: пройдены"
++
++
++def test_cli_main_prints_table_and_verdict(tmp_path, capsys) -> None:
++    """CLI-контракт: --btc/--eth/--folds печатают таблицу и строку вердикта."""
++    btc, eth, folds = _passing_fixture(tmp_path)
++    gates.main(
++        [
++            "--btc",
++            str(btc),
++            "--eth",
++            str(eth),
++            "--folds",
++            *[str(path) for path in folds],
++        ]
++    )
++    out = capsys.readouterr().out.splitlines()
++    assert out[-1] == "ГЕЙТЫ: пройдены"
++    assert any(line.startswith("гейт 5") for line in out)
+diff --git a/tests/test_metrics.py b/tests/test_metrics.py
+index 461b911..4f51fd8 100644
+--- a/tests/test_metrics.py
++++ b/tests/test_metrics.py
+@@ -1,27 +1,32 @@
++from dataclasses import replace
+ from decimal import Decimal
+ 
+ from strategylab.broker.orders import Fill, Side
+ from strategylab.core.metrics import Metrics
+ 
+ 
+ def make_fill() -> Fill:
+     return Fill(
+         ts=1_717_200_000,
+         side=Side.BUY,
+         price=Decimal("50000"),
+         qty=Decimal("1"),
+         fee=Decimal("0"),
+         reason="close",
+     )
+ 
+ 
++def _fill(side: Side) -> Fill:
++    return replace(make_fill(), side=side)
++
++
+ def record(m: Metrics, pnl: str) -> None:
+     m.record(make_fill(), pnl=Decimal(pnl))
+ 
+ 
+ def test_empty_metrics_has_zero_fields_and_none_ratios() -> None:
+     m = Metrics()
+     assert m.trades == 0
+     assert m.wins == 0
+     assert m.losses == 0
+     assert m.net_pnl == Decimal("0")
+@@ -120,10 +125,37 @@ def test_max_drawdown_zero_when_equity_only_rises() -> None:
+ 
+ 
+ def test_net_pnl_and_equity_track_running_sum() -> None:
+     m = Metrics()
+     record(m, "10")
+     assert m.net_pnl == Decimal("10")
+     assert m.equity == Decimal("10")
+     record(m, "-4")
+     assert m.net_pnl == Decimal("6")
+     assert m.equity == Decimal("6")
++
++
++def test_record_splits_by_side() -> None:
++    m = Metrics(equity=Decimal("10000"))
++    m.record(_fill(Side.SELL), Decimal("-50"), Side.BUY)   # лонг закрыт в убыток
++    m.record(_fill(Side.BUY), Decimal("120"), Side.SELL)   # шорт закрыт в прибыль
++    assert m.long.trades == 1 and m.long.losses == 1
++    assert m.short.trades == 1 and m.short.wins == 1
++    assert m.long.net_pnl == Decimal("-50")
++    assert m.short.net_pnl == Decimal("120")
++    assert m.trades == 2 and m.net_pnl == Decimal("70")
++
++
++def test_side_profit_factor_is_none_without_losses() -> None:
++    m = Metrics()
++    m.record(_fill(Side.BUY), Decimal("10"), Side.BUY)
++    m.record(_fill(Side.BUY), Decimal("5"), Side.BUY)
++    assert m.long.profit_factor() is None
++    assert m.long.win_rate() == Decimal("1")
++    assert m.short.trades == 0 and m.short.profit_factor() is None
++
++
++def test_record_without_side_keeps_totals_only() -> None:
++    m = Metrics(equity=Decimal("10000"))
++    m.record(_fill(Side.SELL), Decimal("-5"))
++    assert m.trades == 1 and m.net_pnl == Decimal("-5")
++    assert m.long.trades == 0 and m.short.trades == 0
+diff --git a/tests/test_report.py b/tests/test_report.py
+index 0e73fcd..7b60dee 100644
+--- a/tests/test_report.py
++++ b/tests/test_report.py
+@@ -1,11 +1,12 @@
+ import json
++from collections.abc import Sequence
+ from decimal import Decimal
+ from types import SimpleNamespace
+ from typing import Any, cast
+ 
+ import pytest
+ 
+ from strategylab.broker.costs import CostModel, IntrabarOrder
+ from strategylab.broker.orders import Fill, Side
+ from strategylab.core.bars import Interval
+ from strategylab.core.metrics import Metrics
+@@ -81,75 +82,120 @@ def test_to_text_puts_header_in_first_five_lines() -> None:
+     report = build_report(
+         spec=spec,
+         zones_used=(Zone.FIT, Zone.HOLDOUT),
+         costs=CostModel(),
+         trials=7,
+         intrabar=IntrabarOrder.OPTIMISTIC,
+         metrics=Metrics(),
+     )
+     assert isinstance(report, Report)
+     lines = report.to_text().splitlines()
+-    assert len(lines) == 14
++    assert len(lines) == 20
+     assert lines[0] == f"spec_version: {spec.version}"
+     assert lines[1] == "zones_used: fit, holdout"
+     assert lines[2].startswith("costs: taker_fee=")
+     assert "leverage=1" in lines[2]
+     assert lines[3] == "trials: 7"
+     assert lines[4] == "intrabar: OPTIMISTIC"
+     assert lines[5] == "trades: 0"
+     assert lines[6] == "wins: 0"
+     assert lines[7] == "losses: 0"
+     assert lines[8] == "net_pnl: 0"
+     assert lines[9] == "equity: 0"
+     assert lines[10] == "max_drawdown: 0"
+     assert lines[11] == "profit_factor: null"
+     assert lines[12] == "win_rate: null"
+     assert lines[13] == "sharpe: null"
++    assert lines[14] == "long_trades: 0"
++    assert lines[15] == "long_net_pnl: 0"
++    assert lines[16] == "long_profit_factor: null"
++    assert lines[17] == "short_trades: 0"
++    assert lines[18] == "short_net_pnl: 0"
++    assert lines[19] == "short_profit_factor: null"
+ 
+ 
+ def make_report_with_metrics(
+     trades: int = 0,
+     wins: int = 0,
+     losses: int = 0,
++    long_pnls: Sequence[Decimal] = (),
++    short_pnls: Sequence[Decimal] = (),
+ ) -> Report:
+-    """Отчёт с метриками, собранными записью fills: выигрыш +10+i, убыток -(10+j)."""
++    """Отчёт с метриками, собранными записью fills: выигрыш +10+i, убыток -(10+j).
++
++    long_pnls/short_pnls записываются теми же вызовами metrics.record, но с
++    стороной закрываемой позиции — стороны копят те же сделки, что и итог.
++    """
+     if wins + losses > trades:
+         raise ValueError("wins + losses cannot exceed trades")
+     metrics = Metrics()
+     fill = Fill(
+         ts=1_717_200_000,
+         side=Side.SELL,
+         price=Decimal("100"),
+         qty=Decimal("1"),
+         fee=Decimal("0"),
+         reason="close",
+     )
+     for index in range(wins):
+         metrics.record(fill, Decimal(10 + index))
+     for index in range(losses):
+         metrics.record(fill, Decimal(-(10 + index)))
+     for _ in range(trades - wins - losses):
+         metrics.record(fill, Decimal("0"))
++    for pnl in long_pnls:
++        metrics.record(fill, pnl, Side.BUY)
++    for pnl in short_pnls:
++        metrics.record(fill, pnl, Side.SELL)
+     return build_report(
+         spec=make_spec(),
+         zones_used=(Zone.FIT,),
+         costs=CostModel(),
+         trials=1,
+         intrabar=IntrabarOrder.PESSIMISTIC,
+         metrics=metrics,
+     )
+ 
+ 
++def test_report_publishes_sides_separately() -> None:
++    r = make_report_with_metrics(
++        long_pnls=(Decimal("-20"), Decimal("-20")), short_pnls=(Decimal("100"),)
++    )
++    text = r.to_text()
++    assert "long_trades: 2" in text and "long_net_pnl: -40" in text
++    assert "short_trades: 1" in text and "short_net_pnl: 100" in text
++    assert "long_profit_factor: 0" in text        # убытки есть, прибыли нет
++    assert "short_profit_factor: null" in text    # убыточных сделок у стороны нет
++
++
++def test_json_keys_include_sides_after_sharpe() -> None:
++    payload = json.loads(make_report_with_metrics().to_json())
++    assert list(payload)[-6:] == [
++        "long_trades", "long_net_pnl", "long_profit_factor",
++        "short_trades", "short_net_pnl", "short_profit_factor",
++    ]
++
++
+ def test_to_text_includes_the_ratio_metrics_with_the_json_values() -> None:
+     report = make_report_with_metrics(trades=2, wins=1, losses=1)
+     lines = report.to_text().splitlines()
+-    assert lines[-3:] == ["profit_factor: 1", "win_rate: 0.5", "sharpe: 0"]
++    assert lines[-9:] == [
++        "profit_factor: 1",
++        "win_rate: 0.5",
++        "sharpe: 0",
++        "long_trades: 0",
++        "long_net_pnl: 0",
++        "long_profit_factor: null",
++        "short_trades: 0",
++        "short_net_pnl: 0",
++        "short_profit_factor: null",
++    ]
+ 
+ 
+ def test_profit_factor_serialises_as_null() -> None:
+     wins_only = make_report_with_metrics(trades=3, wins=3)
+     payload = json.loads(wins_only.to_json())
+     assert payload["profit_factor"] is None
+     assert '"profit_factor": null' in wins_only.to_json()
+ 
+     with_losses = make_report_with_metrics(trades=2, wins=1, losses=1)
+     payload = json.loads(with_losses.to_json())
+@@ -226,12 +272,18 @@ def test_json_key_order_is_fixed() -> None:
+         "intrabar",
+         "trades",
+         "wins",
+         "losses",
+         "net_pnl",
+         "equity",
+         "max_drawdown",
+         "profit_factor",
+         "win_rate",
+         "sharpe",
++        "long_trades",
++        "long_net_pnl",
++        "long_profit_factor",
++        "short_trades",
++        "short_net_pnl",
++        "short_profit_factor",
+     ]
+     assert list(payload["costs"]) == ["taker_fee", "maker_fee", "slippage", "leverage"]
+diff --git a/tests/test_strategy_two_sided_momentum.py b/tests/test_strategy_two_sided_momentum.py
+new file mode 100644
+index 0000000..3f96ae2
+--- /dev/null
++++ b/tests/test_strategy_two_sided_momentum.py
+@@ -0,0 +1,729 @@
++"""Тесты стратегии ДВУСТОРОННИЙ ИМПУЛЬС (two_sided_momentum): синтетические 1m-бары.
++
++Бары строятся так, чтобы пробой читался геометрией ленты, а не настройкой:
++`_bars` — плато без единого выхода цены за границы (ATR = 0.5),
++`_rising_1m_bars` — монотонный рост, где каждый close выше всех предыдущих
++хаёв, `_bars_then_breakout` / `_bars_then_breakdown` — плато, чей close
++растёт/падает, не задевая границы Дончиана, и завершается одним баром пробоя
++(зеркально), `_downward_breakout` — лента 15m-баров из явного ряда закрытий,
++`_signals` — все выпущенные за прогон ордера плоским списком. Тесты каркаса
++смотрят на состояние (`_hh`, `_ll`, `_atr_value`) — приватные атрибуты
++стратегии в тестах, как `_lower`/`_adx` у flat_keltner; тесты входа/брекета
++смотрят на ордера.
++"""
++
++from __future__ import annotations
++
++from decimal import Decimal
++
++import pytest
++
++from strategylab.broker.orders import Order, OrderKind, Side
++from strategylab.core.bars import Bar
++from strategylab.strategy.base import StrategyState
++from strategylab.strategy.two_sided_momentum import TwoSidedMomentumStrategy
++
++START = 1_717_200_000  # 2024-06-01T00:00:00Z: граница часа, 15m и 5H
++ONE = Decimal("1")
++EQUITY = Decimal("10000")
++FLAT_PRICE = Decimal("100")
++FLAT_HALF = Decimal("0.25")  # плато: high 100.25, low 99.75 — true range 0.5, ATR 0.5
++RISE_STEP = Decimal("0.01")
++
++
++# Помощники прогона: объявлены один раз, переиспользуются задачами 7–10.
++
++
++def _bars(count: int, first: int = 0) -> list[Bar]:
++    """Плато: `count` подрядных 1m-баров с ценой 100 и коридором ±0.25."""
++    return [
++        Bar(
++            ts=START + 60 * (first + i),
++            open=FLAT_PRICE,
++            high=FLAT_PRICE + FLAT_HALF,
++            low=FLAT_PRICE - FLAT_HALF,
++            close=FLAT_PRICE,
++            volume=ONE,
++        )
++        for i in range(count)
++    ]
++
++
++def _rising_1m_bars(count: int, first: int = 0, base: Decimal = FLAT_PRICE) -> list[Bar]:
++    """Монотонный рост: каждый close выше хаёв всех предыдущих баров."""
++    return [
++        Bar(
++            ts=START + 60 * (first + i),
++            open=base + RISE_STEP * i,
++            high=base + RISE_STEP * (i + 1),
++            low=base + RISE_STEP * i,
++            close=base + RISE_STEP * (i + 1),
++            volume=ONE,
++        )
++        for i in range(count)
++    ]
++
++
++def _bars_then_breakout() -> list[Bar]:
++    """Плато из 17 закрытых 15m-баров, пробой вверх на закрытом баре №18.
++
++    Плато: high=100.25, low=99.75 — истинный диапазон каждого бара ровно
++    Decimal("0.5"), поэтому ATR Уайлдера сходится к 0.5 с 14-го закрытого
++    бара и на баре сигнала равен ровно 0.5. Close плато растёт на 0.01 за бар
++    (выше предыдущего close), но до 100.25 не доходит — двухбарный хаёв
++    Дончиана (donch_len=2, max предыдущих high) не пробивается. Финальный бар:
++    close=high=100.5, low=100 — строго выше hh=100.25, диапазон по-прежнему
++    0.5 (гэпа нет: 100.5 − 100.16 = 0.34 < 0.5). Закрытых 15m-баров 18; граница
++    warmup для donch_len=2 — бар №15 (max(2, 14) + 1), пробой значительно после
++    неё.
++    """
++    bars: list[Bar] = []
++    for index in range(17):
++        bars.extend(_bars(14, first=len(bars)))
++        bars.append(
++            Bar(
++                ts=START + 60 * len(bars),
++                open=FLAT_PRICE,
++                high=FLAT_PRICE + FLAT_HALF,
++                low=FLAT_PRICE - FLAT_HALF,
++                close=FLAT_PRICE + RISE_STEP * index,
++                volume=ONE,
++            )
++        )
++    step = Decimal("0.5")
++    for _ in range(14):
++        bars.append(
++            Bar(
++                ts=START + 60 * len(bars),
++                open=FLAT_PRICE,
++                high=FLAT_PRICE,
++                low=FLAT_PRICE,
++                close=FLAT_PRICE,
++                volume=ONE,
++            )
++        )
++    bars.append(
++        Bar(
++            ts=START + 60 * len(bars),
++            open=FLAT_PRICE,
++            high=FLAT_PRICE + step,
++            low=FLAT_PRICE,
++            close=FLAT_PRICE + step,
++            volume=ONE,
++        )
++    )
++    return bars
++
++
++def _bars_then_breakdown() -> list[Bar]:
++    """Плато из 17 закрытых 15m-баров, пробой вниз на закрытом баре №18.
++
++    Зеркало `_bars_then_breakout`: плато high=100.25, low=99.75 — истинный
++    диапазон каждого бара ровно Decimal("0.5"), поэтому ATR Уайлдера сходится
++    к 0.5 с 14-го закрытого бара и на баре сигнала равен ровно 0.5. Close
++    плато падает на 0.01 за бар (ниже предыдущего close), но до 99.75 не
++    доходит — двухбарный лоу Дончиана (donch_len=2, min предыдущих low) вниз
++    не пробивается, а растущие хаи плато не дают случайного лонга. Финальный
++    бар: close=low=99.5, high=100 — строго ниже ll=99.75, диапазон по-прежнему
++    0.5 (гэпа нет: 99.84 − 99.5 = 0.34 < 0.5). Закрытых 15m-баров 18; граница
++    warmup для donch_len=2 — бар №15 (max(2, 14) + 1), пробой значительно после
++    неё.
++    """
++    bars: list[Bar] = []
++    for index in range(17):
++        bars.extend(_bars(14, first=len(bars)))
++        bars.append(
++            Bar(
++                ts=START + 60 * len(bars),
++                open=FLAT_PRICE,
++                high=FLAT_PRICE + FLAT_HALF,
++                low=FLAT_PRICE - FLAT_HALF,
++                close=FLAT_PRICE - RISE_STEP * index,
++                volume=ONE,
++            )
++        )
++    step = Decimal("0.5")
++    for _ in range(14):
++        bars.append(
++            Bar(
++                ts=START + 60 * len(bars),
++                open=FLAT_PRICE,
++                high=FLAT_PRICE,
++                low=FLAT_PRICE,
++                close=FLAT_PRICE,
++                volume=ONE,
++            )
++        )
++    bars.append(
++        Bar(
++            ts=START + 60 * len(bars),
++            open=FLAT_PRICE,
++            high=FLAT_PRICE,
++            low=FLAT_PRICE - step,
++            close=FLAT_PRICE - step,
++            volume=ONE,
++        )
++    )
++    return bars
++
++
++def _downward_breakout(closes: list[Decimal]) -> list[Bar]:
++    """Лента 15m-баров из явного ряда закрытий: по 15 подрядных 1m-баров на бар.
++
++    Коридор каждого 15m-бара: low на 0.25 под своим close, high — фитиль на
++    0.25 над max(своего close, close следующего бара). Верхний фитиль,
++    накрывающий следующий close, готовит подъём цены внутри чужого high,
++    поэтому шаг вверх сам не пробивает хаёв Дончиана (нужно строго больше).
++    Последний бар ряда — тот самый шаг вниз, у которого close ниже лоу двух
++    предыдущих баров.
++    """
++    bars: list[Bar] = []
++    for index, close in enumerate(closes):
++        following = closes[index + 1] if index + 1 < len(closes) else close
++        high = max(close, following) + FLAT_HALF
++        low = close - FLAT_HALF
++        for minute in range(15):  # полная 15m-группа: 1m-бары идут подряд
++            spike = minute == 0
++            bars.append(
++                Bar(
++                    ts=START + 900 * index + 60 * minute,
++                    open=close,
++                    high=high if spike else close,
++                    low=low if spike else close,
++                    close=close,
++                    volume=ONE,
++                )
++            )
++    return bars
++
++
++def _flat_state(bar_index: int = 0) -> StrategyState:
++    """Плоское состояние: позиции нет, капитал есть (для размерных расчётов)."""
++    return StrategyState(position=Decimal("0"), equity=EQUITY, bar_index=bar_index)
++
++
++def _long_state(bar_index: int = 0) -> StrategyState:
++    """Смоделированный лонг 100 с бара 0: без заявки стратегии — ни брекета,
++    ни pending-истории: список ордеров прогона несёт только сигнал переворота."""
++    return StrategyState(position=Decimal("100"), equity=EQUITY, bar_index=bar_index)
++
++
++def _orders(
++    strategy: TwoSidedMomentumStrategy, bar: Bar, state: StrategyState
++) -> list[Order]:
++    """Один бар через on_bar: список ордеров, который он породил."""
++    return strategy.on_bar(bar, state)
++
++
++def _run_strategy(
++    strategy: TwoSidedMomentumStrategy, bars: list[Bar]
++) -> list[list[Order]]:
++    """Последовательность баров через on_bar: списки ордеров по барам, позиция flat."""
++    return [strategy.on_bar(bar, _flat_state(index)) for index, bar in enumerate(bars)]
++
++
++def _signals(strategy: TwoSidedMomentumStrategy, bars: list[Bar]) -> list[Order]:
++    """Все ордера, выпущенные за прогон, одним плоским списком (позиция flat).
++
++    Generic-помощник задач 8–10: фильтру и выходам достаточно знать, что
++    стратегия вообще сказала за ленту, с привязкой к барам.
++    """
++    return [order for group in _run_strategy(strategy, bars) for order in group]
++
++
++def _signals_while_long(strategy: TwoSidedMomentumStrategy) -> list[Order]:
++    """Прогон встречного пробоя вниз при смоделированном лонге: все ордера списком.
++
++    Лента — `_bars_then_breakdown()`: 17 закрытых плато-баров и пробой вниз на
++    закрытом баре №18 (граница warmup для donch_len=2 — бар №15, сигнал далеко
++    после неё), позиция +100 смонирована с бара 0. Единственный легальный
++    отклик — переворачивающий MARKET: снять лонг и открыть шорт одним ордером.
++    """
++    return [
++        order
++        for group in (
++            strategy.on_bar(bar, _long_state(index))
++            for index, bar in enumerate(_bars_then_breakdown())
++        )
++        for order in group
++    ]
++
++
++# Параметры
++
++
++def test_constructor_validates_params() -> None:
++    with pytest.raises(ValueError, match="donch_len"):
++        TwoSidedMomentumStrategy(donch_len=Decimal("0"))
++    with pytest.raises(ValueError, match="atr_mult"):
++        TwoSidedMomentumStrategy(atr_mult=Decimal("-1"))
++
++
++def test_bias_len_accepts_zero_as_disabled() -> None:
++    s = TwoSidedMomentumStrategy(bias_len=Decimal("0"))
++    assert s.bias_len == 0
++
++
++# Реестр
++
++
++def test_from_params_rejects_unknown() -> None:
++    with pytest.raises(ValueError, match="two_sided_momentum"):
++        TwoSidedMomentumStrategy.from_params({"atr_len": Decimal("14")})
++
++
++# Warmup: граница max(donch_len, _ATR_LEN)
++
++
++def test_warmup_exposes_channel_only_when_both_windows_are_full() -> None:
++    s = TwoSidedMomentumStrategy(donch_len=Decimal("3"), bias_len=Decimal("0"))
++    bars = _rising_1m_bars(count=15 * 15)  # монотонно растущие 1m-бары: 15 завершённых 15m
++    for bar in bars[: 14 * 15]:
++        s.on_bar(bar, _flat_state())
++    assert s._hh is None and s._ll is None and s._atr_value is None  # на баре 13 окно ещё неполно
++    for bar in bars[14 * 15 :]:
++        s.on_bar(bar, _flat_state())
++    assert s._hh is not None and s._atr_value is not None  # на баре 15 полны оба окна
++
++
++# Лонг-вход и стоп-брекет (задача 7)
++
++
++def test_breakout_above_donchian_opens_long_market_order() -> None:
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakout()
++    orders = _run_strategy(s, bars)
++    assert orders[-1] == [Order(Side.BUY, OrderKind.MARKET, Decimal("100"), None, None, False)]
++
++
++def test_stop_bracket_is_placed_on_the_fill_bar() -> None:
++    # вход исполнен на баре с close=100, ATR frozen=0.5, atr_mult=2 → stop=99
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakout()
++    orders = _run_strategy(s, bars)  # прогон плоским состоянием до сигнала включительно
++    assert orders[-1] == [Order(Side.BUY, OrderKind.MARKET, Decimal("100"), None, None, False)]
++    # Движок исполнил MARKET: следующий 1m-бар приходит с позицией 100, close=100.
++    fill_bar = _bars(1, first=len(bars))[0]
++    filled = StrategyState(position=Decimal("100"), equity=EQUITY, bar_index=len(bars))
++    bracket = _orders(s, fill_bar, filled)
++    assert bracket == [
++        Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("99"), True)
++    ]
++    #Pending израсходован: на следующем баре брекет не дублируется и вход не повторяется.
++    repeat = _orders(s, _bars(1, first=len(bars) + 1)[0], filled)
++    assert repeat == []
++    # Никакого LIMIT-ордера стратегия не выдаёт вовсе: фиксированной цели в спеке нет.
++    emitted = [order for group in orders + [bracket, repeat] for order in group]
++    assert all(order.kind is not OrderKind.LIMIT for order in emitted)
++
++
++# Шорт-вход и зеркальный стоп (задача 8)
++
++
++def test_breakdown_below_donchian_opens_short() -> None:
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    orders = _run_strategy(s, _bars_then_breakdown())
++    assert orders[-1] == [Order(Side.SELL, OrderKind.MARKET, Decimal("100"), None, None, False)]
++
++
++def test_short_bracket_stop_is_above_entry() -> None:
++    # шорт исполнен на баре с close=100, ATR frozen=0.5, atr_mult=2 → стоп=101 над входом
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakdown()
++    orders = _run_strategy(s, bars)  # прогон плоским состоянием до сигнала включительно
++    assert orders[-1] == [Order(Side.SELL, OrderKind.MARKET, Decimal("100"), None, None, False)]
++    # Движок исполнил MARKET знаковым позиционированием: следующий 1m-бар приходит
++    # с позицией −100 (шорт), close=100; лонговая ветка брекета при этом молчит.
++    fill_bar = _bars(1, first=len(bars))[0]
++    filled = StrategyState(position=Decimal("-100"), equity=EQUITY, bar_index=len(bars))
++    bracket = _orders(s, fill_bar, filled)
++    assert bracket == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("101"), True)
++    ]
++    # Pending израсходован: на следующем баре брекет не дублируется и вход не повторяется.
++    repeat = _orders(s, _bars(1, first=len(bars) + 1)[0], filled)
++    assert repeat == []
++    # И снова никакого LIMIT: зеркало лонгового теста, фиксированной цели нет.
++    emitted = [order for group in orders + [bracket, repeat] for order in group]
++    assert all(order.kind is not OrderKind.LIMIT for order in emitted)
++
++
++def test_bias_filter_blocks_short_above_ema() -> None:
++    s = TwoSidedMomentumStrategy(donch_len=Decimal("2"), bias_len=Decimal("2"))
++    # 16 плато-баров по 100 (bias = 100), два верхних бара с close=110 — после
++    # них bias = (100+110)/2 = 105, затем (105+110)/2 = 107.5, — и финальный
++    # бар с close=108: ниже лоу двух предыдущих (109.75 = ll), но ВЫШЕ bias,
++    # который на сигнальном баре = (107.5+108)/2 = 107.75. Шорт требует
++    # close < bias, значит вход отрезан; фитиль предыдущего бара накрывает
++    # следующий close, поэтому лонг не выстреливает ни на одном баре ленты.
++    closes_above_bias = [FLAT_PRICE] * 16 + [Decimal("110"), Decimal("110"), Decimal("108")]
++    assert _signals(s, _downward_breakout(closes_above_bias)) == []
++    # Контраст на тех же барах с выключенным фильтром: пробой живой и открывает
++    # ровно один шорт-маркет — пустой список выше заслуга фильтра, а не мёртвой ленты.
++    unfiltered = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    emitted = _signals(unfiltered, _downward_breakout(closes_above_bias))
++    assert [order.side for order in emitted] == [Side.SELL]
++    assert [order.kind for order in emitted] == [OrderKind.MARKET]
++
++
++# Переворот встречным сигналом (задача 9)
++
++
++def test_opposite_signal_reverses_with_a_single_order() -> None:
++    s = TwoSidedMomentumStrategy(donch_len=Decimal("2"), bias_len=Decimal("0"))
++    orders = _signals_while_long(s)
++    assert len(orders) == 1
++    assert orders[0].side is Side.SELL and orders[0].qty > Decimal("100")
++
++
++def test_same_direction_signal_while_position_is_blocked() -> None:
++    # Сигнал того же направления, что позиция: не наращиваем, ордеров нет.
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakout()
++    long_run = [
++        order
++        for group in (s.on_bar(bar, _long_state(index)) for index, bar in enumerate(bars))
++        for order in group
++    ]
++    assert long_run == []  # восходящий пробой при лонге +100 отрезан
++    mirrored = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    short_run = [
++        order
++        for group in (
++            mirrored.on_bar(
++                bar, StrategyState(position=Decimal("-100"), equity=EQUITY, bar_index=index)
++            )
++            for index, bar in enumerate(_bars_then_breakdown())
++        )
++        for order in group
++    ]
++    assert short_run == []  # зеркало: нисходящий пробой при шорте −100 отрезан
++
++
++def test_reversal_lifecycle_brackets_new_leg_on_fill_bar() -> None:
++    # атр_mult=2 и ATR 0.5 → new_qty=100: переворачивающий MARKET несёт 200.
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakdown()
++    orders = [
++        group
++        for group in (s.on_bar(bar, _long_state(index)) for index, bar in enumerate(bars))
++        if group
++    ]
++    assert orders == [[Order(Side.SELL, OrderKind.MARKET, Decimal("200"), None, None, False)]]
++    # Движок исполнил SELL 200 по знаковой лонговой 100: закрытая часть сняла
++    # лонг, остаток открыл шорт 100 (`Position.apply_fill`, ветка переворота) —
++    # следующий 1m-бар приходит с позицией −100, и существующий брекетный путь
++    # вешает стоп НОВОЙ ноги над входом: новой коды для этого нет.
++    fill_bar = _bars(1, first=len(bars))[0]
++    flipped = StrategyState(position=Decimal("-100"), equity=EQUITY, bar_index=len(bars))
++    bracket = _orders(s, fill_bar, flipped)
++    assert bracket == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("101"), True)
++    ]
++    # Pending израсходован на баре исполнения: второй брекет не дублируется.
++    repeat = _orders(s, _bars(1, first=len(bars) + 1)[0], flipped)
++    assert repeat == []
++
++
++def test_second_reversal_signal_while_pending_is_blocked() -> None:
++    # Первый переворачивающий MARKET ещё не исполнен (смоделированный лонг
++    # живёт всю ленту): встречный сигнал следующего 15m-бара не должен давать
++    # второй ордер — иначе комиссии входа разойдутся с net_pnl (Review Focus 2).
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakdown()
++    emitted = [
++        order
++        for group in (s.on_bar(bar, _long_state(index)) for index, bar in enumerate(bars))
++        for order in group
++    ]
++    assert len(emitted) == 1  # сигнал бара №18 в силе, pending не израсходован
++    # Доводка группы №19: закрытие 99 — ниже обновлённого ll=99.5, т.е. живой
++    # встречный сигнал, а не пустой бар.
++    price = Decimal("99")
++    extra = [
++        Bar(
++            ts=START + 60 * (len(bars) + minute),
++            open=price,
++            high=price,
++            low=price,
++            close=price,
++            volume=ONE,
++        )
++        for minute in range(15)
++    ]
++    more = [
++        order
++        for group in (
++            s.on_bar(bar, _long_state(len(bars) + index)) for index, bar in enumerate(extra)
++        )
++        for order in group
++    ]
++    assert more == []
++
++
++def test_bias_filter_blocks_reversal_as_it_blocks_entry() -> None:
++    # Та же лента, что в тесте фильтра шорта (T8), но с позиция long +100:
++    # встречный сигнал блокируется фильтром уклона ровно как свежий вход.
++    s = TwoSidedMomentumStrategy(donch_len=Decimal("2"), bias_len=Decimal("2"))
++    bars = _downward_breakout(
++        [FLAT_PRICE] * 16 + [Decimal("110"), Decimal("110"), Decimal("108")]
++    )
++    filtered = [
++        order
++        for group in (s.on_bar(bar, _long_state(index)) for index, bar in enumerate(bars))
++        for order in group
++    ]
++    assert filtered == []
++    # Контраст с выключенным фильтром: переворот живой — ровно один SELL.
++    unfiltered = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    emitted = [
++        order
++        for group in (
++            unfiltered.on_bar(bar, _long_state(index)) for index, bar in enumerate(bars)
++        )
++        for order in group
++    ]
++    assert len(emitted) == 1 and emitted[0].side is Side.SELL
++
++
++def test_bracket_flat_call_emits_nothing() -> None:
++    # м16: знаковая обработка ветки брекета явная (`> 0` / `< 0` / иначе),
++    # плоскому вызову соответствует пустой список, а не стоп «наугад».
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    assert s._bracket_orders(_bars(1)[0], _flat_state(), Decimal("0.5")) == []
++
++
++# Трейлинг ATR-стопа после входа (задача 10)
++
++
++def _group_orders(
++    strategy: TwoSidedMomentumStrategy,
++    first: int,
++    members: list[tuple[Decimal, Decimal, Decimal, Decimal]],
++    position: Decimal,
++) -> list[Order]:
++    """Прогон 1m-баров группы (o, h, l, c), идущих подряд с индекса `first`.
++
++    Возвращает все ордера группы одним списком: позиция в состоянии одна и та
++    же на всю группу — движок в этих тестах смонирован externally.
++    """
++    emitted: list[Order] = []
++    state = StrategyState(position=position, equity=EQUITY, bar_index=first)
++    for minute, (open_, high, low, close) in enumerate(members):
++        emitted.append(
++            strategy.on_bar(
++                Bar(
++                    ts=START + 60 * (first + minute),
++                    open=open_,
++                    high=high,
++                    low=low,
++                    close=close,
++                    volume=ONE,
++                ),
++                state,
++            )
++        )
++    return [order for group in emitted for order in group]
++
++
++def _trail_long_to_high_105(s: TwoSidedMomentumStrategy) -> list[Order]:
++    """Реальный вход лонга и лестница трейла до закрытого 15m-бара с high 105.
++
++    Вход: `_bars_then_breakout()` (сигнал №18, замороженный ATR 0.5). Исполнение
++    — нулевая минута группы №19 плоским 1m-баром close=100: брекет SELL на 99
++    там же заводит состояние трейлинга (уровень 99, экстремумы 100/100). Далее
++    группа №19 закрывается баром H=100.5/L=100/C=100.5 (TR ровно 0.5 — ATR
++    Уайлдера остаётся ровно 0.5), а восемь лестничных групп №20–№28 поднимают
++    high на 0.5 за бар до 105: каждый шаг — истинный диапазон 0.5, ATR 0.5 без
++    изменения. Возвращает ордера финальной лестницы (bar high 105).
++    """
++    bars = _bars_then_breakout()
++    _run_strategy(s, bars)
++    flat = FLAT_PRICE
++    h105 = Decimal("105")
++    step = Decimal("0.5")
++    # Нулевая минута группы №19: close 100 → брекет 99 и инициализация трейла.
++    assert _group_orders(s, len(bars), [(flat, flat, flat, flat)], Decimal("100")) == [
++        Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("99"), True)
++    ]
++    # Закрытие группы №19: H=100.5, L=100, C=100.5 — TR 0.5, трейл на 99.5.
++    assert _group_orders(
++        s,
++        len(bars) + 1,
++        [(Decimal("100"), Decimal("100.5"), Decimal("100"), Decimal("100.5"))] * 14,
++        Decimal("100"),
++    ) == [Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("99.5"), True)]
++    # Лестница №20–№28: close каждого бара = high = prev close + 0.5 (TR 0.5);
++    # встречных сигналов нет (шаг вверх — тот же блок one-order-per-fill уже
++    # закреплял в тесте блокировки лонга при лонге).
++    orders: list[Order] = []
++    index = len(bars) + 15
++    price = Decimal("100.5")
++    for _ in range(9):
++        top = price + step
++        orders = _group_orders(
++            s,
++            index,
++            [(price, top, price, top)] * 15,
++            Decimal("100"),
++        )
++        price = top
++        index += 15
++    # price == 105: финальный бар — тот самый high 105 при ATR 0.5.
++    assert price == h105
++    return orders
++
++
++def test_long_stop_trails_up_only() -> None:
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    orders = _trail_long_to_high_105(s)
++    # Закрытый 15m-бар с high 105 при ATR ровно 0.5: candidate 104 = 105 − 2×0.5
++    # (живой ATR, не замороженный) лучше уровня 103.5 → единственный ордер.
++    assert orders == [
++        Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("104"), True)
++    ]
++    # Следующий бар не лучше: high остаётся 105 (экстремум не уменьшается),
++    # TR 0.5 → ATR 0.5 → candidate ровно 104 = уровень: строгое «лучше» не
++    # выполнено, повторной заявки нет — стоп не переставляется на месте.
++    flat_again = _group_orders(
++        s,
++        270 + 15 * 10,
++        [(Decimal("104.5"), Decimal("105"), Decimal("104.5"), Decimal("105"))] * 15,
++        Decimal("100"),
++    )
++    assert flat_again == []
++
++
++def test_short_stop_trails_down_only() -> None:
++    # Зеркало: вход шорта, брекет 101, лестница вниз до low 95, candidate
++    # 96 = 95 + 2×0.5 (живой ATR 0.5) — ровно pinned-уровень.
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakdown()
++    _run_strategy(s, bars)
++    flat = FLAT_PRICE
++    step = Decimal("0.5")
++    assert _group_orders(s, len(bars), [(flat, flat, flat, flat)], Decimal("-100")) == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("101"), True)
++    ]
++    assert _group_orders(
++        s,
++        len(bars) + 1,
++        [(Decimal("99.5"), Decimal("100"), Decimal("99.5"), Decimal("99.5"))] * 14,
++        Decimal("-100"),
++    ) == [Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("100.5"), True)]
++    orders: list[Order] = []
++    index = len(bars) + 15
++    price = Decimal("99.5")
++    for _ in range(9):
++        bottom = price - step
++        orders = _group_orders(s, index, [(price, price, bottom, bottom)] * 15, Decimal("-100"))
++        price = bottom
++        index += 15
++    assert price == Decimal("95")  # финальный бар: low 95 при ATR 0.5
++    assert orders == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("96"), True)
++    ]
++    # Зеркальный «не лучше»: low остаётся 95, candidate ровно 96 = уровень —
++    # заявка не повторяется.
++    again = _group_orders(
++        s,
++        270 + 15 * 10,
++        [(Decimal("95"), Decimal("95.5"), Decimal("95"), Decimal("95.5"))] * 15,
++        Decimal("-100"),
++    )
++    assert again == []
++
++
++def test_flatten_clears_trailing_state() -> None:
++    # Плоское состояние без ожидания снимает экстремумы и уровень: мёртвых
++    # полей нет, новая нога не может унаследовать старые значения.
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    _trail_long_to_high_105(s)
++    assert s._stop_level is not None and s._since_high is not None
++    for bar in _bars(15, first=270 + 15 * 10):  # группа №29 при позиции 0
++        s.on_bar(bar, _flat_state())
++    assert s._stop_level is None and s._since_high is None and s._since_low is None
++
++
++def test_reversal_reinitialises_trailing_on_new_leg() -> None:
++    # R2: переворот перезапускает трейлинг с экстремумов и уровня НОВОЙ ноги.
++    # Старый лонг оттрейлен до high 105 (уровень стопа 104); переворот — баром
++    # с истинным диапазоном 7.5 (ATR после него ровно 1.0), qty = 100 + 50;
++    # исполнение — flat-баром close 97.5: брекет BUY на 99.5 = 97.5 + 2×1.0
++    # и сброс экстремумов на 97.5. Первый закрытый бар новой ноги: L=97.5,
++    # H=98.5, C=98 (TR 1.0 — ATR остаётся ровно 1.0) → candidate 97.5 + 2×1.0
++    # = 99.5 = новый уровень: строго «лучше» нет → [] — со старым уровнем 104
++    # стратегия ошибочно переставила бы стоп новой ноги на 99.5.
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    _trail_long_to_high_105(s)
++    assert s._stop_level == Decimal("104") and s._since_high == Decimal("105")
++    # Бар переворота (группа №29): close 97.5 < ll=104, TR=7.5 → ATR ровно 1.0.
++    reversed_bar = _group_orders(
++        s,
++        270 + 15 * 10,
++        [(Decimal("97.5"), Decimal("104"), Decimal("97.5"), Decimal("97.5"))] * 15,
++        Decimal("100"),
++    )
++    assert reversed_bar == [Order(Side.SELL, OrderKind.MARKET, Decimal("150"), None, None, False)]
++    # Исполнение переворота: +100 − 150 = −50, брекет новой ноги на 99.5.
++    fill = _group_orders(
++        s,
++        270 + 15 * 11,
++        [(Decimal("97.5"), Decimal("97.5"), Decimal("97.5"), Decimal("97.5"))],
++        Decimal("-50"),
++    )
++    assert fill == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("50"), None, Decimal("99.5"), True)
++    ]
++    assert s._since_high == Decimal("97.5") and s._stop_level == Decimal("99.5")
++    # Закрытие группы №30 (14 минут): H=98.5, L=97.5, C=98 → TR 1.0, ATR 1.0;
++    # candidate 99.5 = уровень — повторной заявки нет (со старым уровнем 104
++    # была бы — это и есть отравление экстремумами прежней ноги).
++    hold = _group_orders(
++        s,
++        270 + 15 * 11 + 1,
++        [(Decimal("97.5"), Decimal("98.5"), Decimal("97.5"), Decimal("98"))] * 14,
++        Decimal("-50"),
++    )
++    assert hold == []
++    # Новый экстремум шортовой ноги (low 97) даёт candidate 99 < 99.5: заявка
++    # идёт от экстремумов новой ноги, старый high 105 в расчёт не попал.
++    trail = _group_orders(
++        s,
++        270 + 15 * 12,
++        [(Decimal("97.5"), Decimal("98"), Decimal("97"), Decimal("97.5"))] * 15,
++        Decimal("-50"),
++    )
++    assert trail == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("50"), None, Decimal("99"), True)
++    ]
+diff --git a/tests/test_sweep.py b/tests/test_sweep.py
+index 4f794df..c06a998 100644
+--- a/tests/test_sweep.py
++++ b/tests/test_sweep.py
+@@ -5,39 +5,47 @@
+ """
+ 
+ from __future__ import annotations
+ 
+ import importlib.util
+ import json
+ from decimal import Decimal
+ from pathlib import Path
+ from types import ModuleType
+ 
+-from strategylab.core.bars import Bar
++from strategylab.broker.costs import CostModel, IntrabarOrder
++from strategylab.broker.orders import Side
++from strategylab.core.bars import Bar, Interval
++from strategylab.core.metrics import Metrics
+ from strategylab.data.schema import SCHEMA, connect
+ from strategylab.data.store import CandleStore
+ from strategylab.data.zones import Zone, assign_zone
++from strategylab.report.report import Report, build_report
++from strategylab.spec.spec import StrategySpec
++from strategylab.strategy.two_sided_momentum import TwoSidedMomentumStrategy
++from tests.test_metrics import make_fill
+ 
+ SYMBOL = "BTCUSDT"
+ START_TS = 1717200000  # 2024-06-01T00:00:00Z
+ WARMUP = 1529  # прогрев 5H при коротких длинах индикаторов
+ TAIL = 30
+ END_TS = START_TS + 60 * (WARMUP + 1 + TAIL)
+ PRICE = Decimal("100")
+ SPAN = Decimal("0.5")
+ DIP_LOW = Decimal("96.5")
+ 
+ _SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "sweep.py"
+ 
+ CSV_HEADER = (
+     "spec_version,adx_len,ema_len,atr_len_regime,atr_len_exit,exit_mult,"
+-    "trades,wins,net_pnl,max_drawdown,profit_factor,sharpe"
++    "trades,wins,net_pnl,max_drawdown,profit_factor,sharpe,"
++    "long_trades,long_net_pnl,long_profit_factor,short_trades,short_net_pnl,short_profit_factor"
+ )
+ 
+ EXIT_MULT_COLUMN = 5
+ 
+ 
+ def _load_sweep() -> ModuleType:
+     """Модуль скрипта по пути файла: scripts/ не пакет."""
+     spec = importlib.util.spec_from_file_location("sweep_script", _SCRIPT)
+     assert spec is not None
+     assert spec.loader is not None
+@@ -133,21 +141,21 @@ def test_sweep_prints_one_row_per_combination(tmp_path: Path, capsys) -> None:
+     db = tmp_path / "flat.db"
+     make_db(db)
+ 
+     _load_sweep().main(_argv(db))
+ 
+     out = capsys.readouterr().out
+     assert CSV_HEADER in out.splitlines()
+     rows = _rows(out)
+     assert len(rows) == 2
+     assert [row[EXIT_MULT_COLUMN] for row in rows] == ["1.5", "2"]
+-    assert all(len(row) == 12 for row in rows)
++    assert all(len(row) == 18 for row in rows)
+     # Сделка в каждой комбинации одна: сигнал на проколке, выход — по закрытию окна.
+     assert [row[6] for row in rows] == ["1", "1"]
+     # Размер разный (ширина стопа разная), значит и P&L разный.
+     assert rows[0][8] != rows[1][8]
+     assert "комбинаций: 2" in out
+ 
+ 
+ def test_sweep_skips_a_combination_rejected_by_the_strategy(tmp_path: Path, capsys) -> None:
+     """Параметр, не прошедший валидацию стратегии, пропускается: развёртка не падает."""
+     db = tmp_path / "flat.db"
+@@ -204,10 +212,54 @@ def test_touch_registry_silent_on_fit_only_window(tmp_path: Path, monkeypatch, c
+     module = _load_sweep()
+     registry = tmp_path / "touch_registry.json"
+     monkeypatch.setattr(module, "TOUCH_REGISTRY", registry)
+     db = tmp_path / "flat.db"
+     make_db(db)
+ 
+     module.main(_argv(db))
+     out = capsys.readouterr().out
+     assert "touches: holdout=0, live=0" in out
+     assert not registry.exists()
++
++
++# Реестр и стороны в CSV: дефолты из конструктора и шесть колонок SideMetrics
++
++
++def test_sweep_defaults_take_constructor_values() -> None:
++    """Гейт «≤3 свободных параметра»: ровно donch_len/atr_mult/bias_len из конструктора."""
++    sweep = _load_sweep()
++    assert sweep._defaults(TwoSidedMomentumStrategy) == {
++        "donch_len": Decimal("48"),
++        "atr_mult": Decimal("1.5"),
++        "bias_len": Decimal("48"),
++    }
++
++
++def report_with(metrics: Metrics) -> Report:
++    """Отчёт с заданными метриками: тот же idiom build_report, что в test_report.py."""
++    return build_report(
++        spec=StrategySpec(
++            name="two_sided_momentum",
++            symbol=SYMBOL,
++            interval=Interval.MINUTE,
++            start_ts=START_TS,
++            end_ts=END_TS,
++            params={"donch_len": Decimal("48")},
++            rules_ref="strategydocs/spec_01_two_sided_momentum_20261022.md",
++        ),
++        zones_used=(Zone.FIT,),
++        costs=CostModel(),
++        trials=1,
++        intrabar=IntrabarOrder.PESSIMISTIC,
++        metrics=metrics,
++    )
++
++
++def test_sweep_row_includes_side_columns() -> None:
++    sweep = _load_sweep()
++    metrics = Metrics(equity=Decimal("10000"))
++    fill = make_fill()
++    for pnl in (Decimal("-20"), Decimal("-20")):
++        metrics.record(fill, pnl, Side.BUY)
++    metrics.record(fill, Decimal("100"), Side.SELL)
++    row = sweep._row(report_with(metrics), {"donch_len": Decimal("48")}, ["donch_len"])
++    assert row.split(",")[-6:] == ["2", "-40", "0", "1", "100", "null"]

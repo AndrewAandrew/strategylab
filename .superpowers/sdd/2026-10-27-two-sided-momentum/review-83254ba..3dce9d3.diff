@@ -1,0 +1,436 @@
+# Review package: 83254ba..3dce9d3
+
+## Commits
+3dce9d3 feat: reversing breakout on opposite signal
+
+## Files changed
+ strategylab/strategy/two_sided_momentum.py |  58 +++++++---
+ tests/test_engine_trades.py                |  10 ++
+ tests/test_strategy_two_sided_momentum.py  | 163 +++++++++++++++++++++++++++++
+ 3 files changed, 216 insertions(+), 15 deletions(-)
+
+## Diff
+diff --git a/strategylab/strategy/two_sided_momentum.py b/strategylab/strategy/two_sided_momentum.py
+index ec980c7..f550f23 100644
+--- a/strategylab/strategy/two_sided_momentum.py
++++ b/strategylab/strategy/two_sided_momentum.py
+@@ -7,31 +7,34 @@
+ где HH/LL считаются по предшествующему окну — без сигнального бара B. Фильтр
+ уклона — `bias_len`-сглаживание Уайлдера по Close 15m, `bias_len = 0` фильтр
+ выключает. Дистанция стопа — `atr_mult` × ATR(14), ATR Уайлдера заморожен на
+ баре-сигнале, поэтому ATR и bias считаются включая B.
+ 
+ Поток данных тот же, что у остальных стратегий: стратегия получает 1m-бары и
+ сама агрегирует 15m через `Aggregator` с якорем по эпохе; неполная группа в
+ расчёт не попадает. `atr_len = 14` и `risk_frac = 0.01` — константы модуля,
+ свободных параметров ровно три (Global Constraint 10).
+ 
+-Реализовано (задача 8): вход в обе стороны и зеркальный стоп-брекет. На
+-закрытии 15m-бара B, когда окно готово, позиция плоская и исполнение не
++Реализовано (задачи 7–9): вход в обе стороны, зеркальный стоп-брекет и
++переворот встречным сигналом. На закрытии 15m-бара B, когда окно готово,
++позиция плоская и исполнение не
+ ожидается, `Close(B) > hh` или `Close(B) < ll` (при включённом фильтре уклона
+ — соответственно и `Close(B) > bias` либо `Close(B) < bias`) порождает
+ MARKET-заявку с размером `equity · risk_frac / (atr_mult · ATR)`; ATR морозится
+ на баре сигнала. На баре исполнения входа вешается reduce_only STOP_MARKET по
+ `close − atr_mult · ATR_замороженный` для лонга и `close + atr_mult · ATR` для
+ шорта — стоп всегда с противоположной от входа стороны. Фиксированной цели в
+-спеке нет — LIMIT не выдаётся никогда. Реверс (задача 9) и трейлинг (10)
+-надстраиваются
+-следующими задачами плана.
++спеке нет — LIMIT не выдаётся никогда. Встречный пробой при открытой позиции
++переворачивает её одним MARKET объёма `abs(position) + qty` (задача 9): тот же
++брекетный путь вешает стоп новой ноги на баре исполнения. Трейлинг (10)
++надстраивается
++следующей задачей плана.
+ """
+ 
+ from __future__ import annotations
+ 
+ from collections import deque
+ from collections.abc import Mapping
+ from decimal import Decimal
+ 
+ from strategylab.broker.orders import Order, OrderKind, Side
+ from strategylab.core.bars import Bar
+@@ -115,23 +118,24 @@ class TwoSidedMomentumStrategy:
+ 
+     @property
+     def bias_len(self) -> int:
+         """Параметр `bias_len` целым числом: 0 — фильтр уклона выключен."""
+         return self._bias_len
+ 
+     def on_bar(self, bar: Bar, state: StrategyState) -> list[Order]:
+         """Один 1m-бар: обновить агрегаты 15m, искать вход, вешать брекет.
+ 
+         Порядок как в FlatKeltnerStrategy.on_bar: сначала закрытие 15m-бара и
+-        поиск сигнала входа (ограничен `state.position == 0` и отсутствием
+-        ожидающего исполнения), затем — проверка, что выданный MARKET уже
+-        исполнен: если позиция открыта в сторону ожидания (лонг при знаке
++        поиск сигнала входа (свежий вход — только при плоской позиции;
++        встречный сигнал при открытой — переворот одним MARKET, задача 9; при
++        ожидающем исполнении — молчание), затем — проверка, что выданный MARKET
++        уже исполнен: если позиция открыта в сторону ожидания (лонг при знаке
+         позиции > 0, шорт при < 0) и вход ожидается, на этом баре вешается
+         стоп-брекет и ожидающее состояние снимается.
+         """
+         orders: list[Order] = []
+         bar15 = self._m15.update(bar)
+         if bar15 is not None:
+             self._update_15m(bar15)
+             entry = self._entry_order(bar15, state)
+             if entry is not None:
+                 orders.append(entry)
+@@ -152,52 +156,68 @@ class TwoSidedMomentumStrategy:
+         """Вход по пробою Дончиана в обе стороны: MARKET-ордер с размером по риску.
+ 
+         Сторона читается из сравнения close с каналом: `Close(B) > hh` — лонг,
+         `Close(B) < ll` — шорт; оба не выполняются одновременно (hh >= ll).
+         Готовность окна — по `_hh`/`_ll`/`_atr_value` (после границы warmup);
+         `_bias_value` в этой проверке НЕ участвует: при выключенном фильтре
+         (`bias_len == 0`) он `None` по замыслу, а не как «не готово»
+         (решение R9). Фильтр уклона добавляет условие по сторону сигнала —
+         Close(B) > bias для лонга и зеркальное Close(B) < bias для шорта, —
+         только когда включён (`self._bias is not None`), и тогда уже его `None`
+-        честно означает «bias ещё не посчитан».
++        честно означает «bias ещё не посчитан». К перевороту встречным сигналом
++        (задача 9) фильтр уклона применяется ровно так же, как к свежему входу.
+ 
+         Размер `qty = equity · _RISK_FRAC / (atr_mult · atr)`: риск на сделку
+         — _RISK_FRAC капитала, дистанция до стопа — atr_mult · ATR, ATR
+-        замораживается на сигнальном баре в `_pending_atr`. Вход запрещён,
+-        пока позиция не плоская или прошлое исполнение ещё ожидается:
+-        не более одного сигнала на позицию.
++        замораживается на сигнальном баре в `_pending_atr`. Пока прошлое
++        исполнение ещё ожидается, сигнал молчит: не более одного ордера на
++        исполнение. При открытой позиции встречный сигнал переворачивает её
++        ОДНИМ ордером `abs(position) + qty` (задача 9), однонаправленный —
++        блокируется.
+         """
+         hh = self._hh
+         ll = self._ll
+         atr = self._atr_value
+         if hh is None or ll is None or atr is None or atr <= 0:
+             return None
+-        if state.position != 0 or self._pending_entry is not None:
++        if self._pending_entry is not None:
+             return None
+         if bar15.close > hh:
+             side: Side = Side.BUY
+         elif bar15.close < ll:
+             side = Side.SELL
+         else:
+             return None
+         if self._bias is not None:
+             bias = self._bias_value
+             if bias is None:
+                 return None
+             if side is Side.BUY and bar15.close <= bias:
+                 return None
+             if side is Side.SELL and bar15.close >= bias:
+                 return None
+         if state.equity <= 0:
+             return None
+         qty = state.equity * _RISK_FRAC / (self._atr_mult * atr)
++        position = state.position
++        if position != 0:
++            # Переворот (задача 9): встречный сигнал снимает старую ногу и
++            # открывает новую одним MARKET — `abs(position) + qty`. Сигнал
++            # того же направления, что позиция, по-прежнему заблокирован:
++            # не наращиваем. Брекет новой ноги повесит на баре исполнения
++            # существующий путь — новой коды для этого здесь нет.
++            reversing = (position > 0 and side is Side.SELL) or (
++                position < 0 and side is Side.BUY
++            )
++            if not reversing:
++                return None
++            qty += abs(position)
+         self._pending_entry = side
+         self._pending_atr = atr
+         return Order(side, OrderKind.MARKET, qty, None, None, False)
+ 
+     def _bracket_orders(self, bar: Bar, state: StrategyState, entry_atr: Decimal) -> list[Order]:
+         """Стоп-брекет на баре исполнения входа: единственный выход, без цели.
+ 
+         Цена входа оценивается как close бара, на котором MARKET исполнен:
+         движок не отдаёт стратегии цену исполнения (решение 4 Flat-Кельтнера —
+         ошибка оценки равна одному проскальзыванию). Дистанция стопа — та же,
+@@ -205,22 +225,30 @@ class TwoSidedMomentumStrategy:
+         на сигнальном баре. Стоп зеркален позиции: под лонгом (`position > 0`,
+         заявка SELL) и над шортом (`position < 0`, заявка BUY, объём — модуль
+         позиции). LIMIT-ордера нет: фиксированной цели в спеке нет.
+         """
+         entry = bar.close
+         distance = self._atr_mult * entry_atr
+         position = state.position
+         if position > 0:
+             stop = entry - distance
+             return [Order(Side.SELL, OrderKind.STOP_MARKET, position, None, stop, True)]
+-        stop = entry + distance
+-        return [Order(Side.BUY, OrderKind.STOP_MARKET, -position, None, stop, True)]
++        elif position < 0:
++            # Шорт: зеркало — стоп над входом, объём снят по модулю позиции.
++            stop = entry + distance
++            return [Order(Side.BUY, OrderKind.STOP_MARKET, -position, None, stop, True)]
++        else:
++            # Ветка недостижима из on_bar: брекет вешается только на исполненном
++            # входе, а исполненный знак позиции ненулевой по построению.
++            # Плоскому вызову всё равно соответствует явное «ничего»:
++            # implicit else прятал бы рассогласование pending с движком (м16).
++            return []
+ 
+     def _update_15m(self, bar15: Bar) -> None:
+         """Закрытый 15m-бар B: ATR и bias включая B, Дончиан по окну без B.
+ 
+         Порядок фиксации спеки: hh/ll считаются по содержимому окна ДО
+         добавления B (последние `donch_len` завершённых баров перед сигналом),
+         ATR и bias — включая B: сигнальный бар и есть бар B, а стоп
+         замораживается на нём.
+ 
+         Состояние наружу — только после границы warmup: должно пройти
+diff --git a/tests/test_engine_trades.py b/tests/test_engine_trades.py
+index d814a87..59f8a66 100644
+--- a/tests/test_engine_trades.py
++++ b/tests/test_engine_trades.py
+@@ -226,10 +226,20 @@ def test_short_trade_lands_in_short_bucket() -> None:
+     assert metrics.long.trades == 0
+     assert metrics.short.net_pnl == metrics.net_pnl
+     assert metrics.long.net_pnl + metrics.short.net_pnl == metrics.net_pnl
+ 
+ 
+ def test_window_close_is_bucketed_by_position_side() -> None:
+     # Стратегия открывает шорт и больше ничего: движок сводит окно на последнем баре.
+     metrics = _run({0: [_market(Side.SELL, "1")]}, None)
+     assert metrics.short.trades == 1 and metrics.long.trades == 0
+     assert metrics.short.net_pnl == metrics.net_pnl
++
++
++def test_reversal_bucket_split_and_sum() -> None:
++    # бар 0: лонг 1; бар 2: SELL 2 = закрыть лонг и открыть шорт; дальше шорт живёт
++    # до конца ленты, и окно сводит движок.
++    metrics = _run({0: [_market(Side.BUY, "1")], 2: [_market(Side.SELL, "2")]}, TradeLog())
++    assert metrics.long.trades == 1  # закрытая часть переворота
++    assert metrics.short.trades == 1  # шорт, закрытый сведением окна
++    assert metrics.trades == 2
++    assert metrics.long.net_pnl + metrics.short.net_pnl == metrics.net_pnl
+diff --git a/tests/test_strategy_two_sided_momentum.py b/tests/test_strategy_two_sided_momentum.py
+index 4c2c9d9..d53bfcc 100644
+--- a/tests/test_strategy_two_sided_momentum.py
++++ b/tests/test_strategy_two_sided_momentum.py
+@@ -195,20 +195,26 @@ def _downward_breakout(closes: list[Decimal]) -> list[Bar]:
+                 )
+             )
+     return bars
+ 
+ 
+ def _flat_state(bar_index: int = 0) -> StrategyState:
+     """Плоское состояние: позиции нет, капитал есть (для размерных расчётов)."""
+     return StrategyState(position=Decimal("0"), equity=EQUITY, bar_index=bar_index)
+ 
+ 
++def _long_state(bar_index: int = 0) -> StrategyState:
++    """Смоделированный лонг 100 с бара 0: без заявки стратегии — ни брекета,
++    ни pending-истории: список ордеров прогона несёт только сигнал переворота."""
++    return StrategyState(position=Decimal("100"), equity=EQUITY, bar_index=bar_index)
++
++
+ def _orders(
+     strategy: TwoSidedMomentumStrategy, bar: Bar, state: StrategyState
+ ) -> list[Order]:
+     """Один бар через on_bar: список ордеров, который он породил."""
+     return strategy.on_bar(bar, state)
+ 
+ 
+ def _run_strategy(
+     strategy: TwoSidedMomentumStrategy, bars: list[Bar]
+ ) -> list[list[Order]]:
+@@ -218,20 +224,38 @@ def _run_strategy(
+ 
+ def _signals(strategy: TwoSidedMomentumStrategy, bars: list[Bar]) -> list[Order]:
+     """Все ордера, выпущенные за прогон, одним плоским списком (позиция flat).
+ 
+     Generic-помощник задач 8–10: фильтру и выходам достаточно знать, что
+     стратегия вообще сказала за ленту, с привязкой к барам.
+     """
+     return [order for group in _run_strategy(strategy, bars) for order in group]
+ 
+ 
++def _signals_while_long(strategy: TwoSidedMomentumStrategy) -> list[Order]:
++    """Прогон встречного пробоя вниз при смоделированном лонге: все ордера списком.
++
++    Лента — `_bars_then_breakdown()`: 17 закрытых плато-баров и пробой вниз на
++    закрытом баре №18 (граница warmup для donch_len=2 — бар №15, сигнал далеко
++    после неё), позиция +100 смонирована с бара 0. Единственный легальный
++    отклик — переворачивающий MARKET: снять лонг и открыть шорт одним ордером.
++    """
++    return [
++        order
++        for group in (
++            strategy.on_bar(bar, _long_state(index))
++            for index, bar in enumerate(_bars_then_breakdown())
++        )
++        for order in group
++    ]
++
++
+ # Параметры
+ 
+ 
+ def test_constructor_validates_params() -> None:
+     with pytest.raises(ValueError, match="donch_len"):
+         TwoSidedMomentumStrategy(donch_len=Decimal("0"))
+     with pytest.raises(ValueError, match="atr_mult"):
+         TwoSidedMomentumStrategy(atr_mult=Decimal("-1"))
+ 
+ 
+@@ -343,10 +367,149 @@ def test_bias_filter_blocks_short_above_ema() -> None:
+     closes_above_bias = [FLAT_PRICE] * 16 + [Decimal("110"), Decimal("110"), Decimal("108")]
+     assert _signals(s, _downward_breakout(closes_above_bias)) == []
+     # Контраст на тех же барах с выключенным фильтром: пробой живой и открывает
+     # ровно один шорт-маркет — пустой список выше заслуга фильтра, а не мёртвой ленты.
+     unfiltered = TwoSidedMomentumStrategy(
+         donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
+     )
+     emitted = _signals(unfiltered, _downward_breakout(closes_above_bias))
+     assert [order.side for order in emitted] == [Side.SELL]
+     assert [order.kind for order in emitted] == [OrderKind.MARKET]
++
++
++# Переворот встречным сигналом (задача 9)
++
++
++def test_opposite_signal_reverses_with_a_single_order() -> None:
++    s = TwoSidedMomentumStrategy(donch_len=Decimal("2"), bias_len=Decimal("0"))
++    orders = _signals_while_long(s)
++    assert len(orders) == 1
++    assert orders[0].side is Side.SELL and orders[0].qty > Decimal("100")
++
++
++def test_same_direction_signal_while_position_is_blocked() -> None:
++    # Сигнал того же направления, что позиция: не наращиваем, ордеров нет.
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakout()
++    long_run = [
++        order
++        for group in (s.on_bar(bar, _long_state(index)) for index, bar in enumerate(bars))
++        for order in group
++    ]
++    assert long_run == []  # восходящий пробой при лонге +100 отрезан
++    mirrored = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    short_run = [
++        order
++        for group in (
++            mirrored.on_bar(
++                bar, StrategyState(position=Decimal("-100"), equity=EQUITY, bar_index=index)
++            )
++            for index, bar in enumerate(_bars_then_breakdown())
++        )
++        for order in group
++    ]
++    assert short_run == []  # зеркало: нисходящий пробой при шорте −100 отрезан
++
++
++def test_reversal_lifecycle_brackets_new_leg_on_fill_bar() -> None:
++    # атр_mult=2 и ATR 0.5 → new_qty=100: переворачивающий MARKET несёт 200.
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakdown()
++    orders = [
++        group
++        for group in (s.on_bar(bar, _long_state(index)) for index, bar in enumerate(bars))
++        if group
++    ]
++    assert orders == [[Order(Side.SELL, OrderKind.MARKET, Decimal("200"), None, None, False)]]
++    # Движок исполнил SELL 200 по знаковой лонговой 100: закрытая часть сняла
++    # лонг, остаток открыл шорт 100 (`Position.apply_fill`, ветка переворота) —
++    # следующий 1m-бар приходит с позицией −100, и существующий брекетный путь
++    # вешает стоп НОВОЙ ноги над входом: новой коды для этого нет.
++    fill_bar = _bars(1, first=len(bars))[0]
++    flipped = StrategyState(position=Decimal("-100"), equity=EQUITY, bar_index=len(bars))
++    bracket = _orders(s, fill_bar, flipped)
++    assert bracket == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("101"), True)
++    ]
++    # Pending израсходован на баре исполнения: второй брекет не дублируется.
++    repeat = _orders(s, _bars(1, first=len(bars) + 1)[0], flipped)
++    assert repeat == []
++
++
++def test_second_reversal_signal_while_pending_is_blocked() -> None:
++    # Первый переворачивающий MARKET ещё не исполнен (смоделированный лонг
++    # живёт всю ленту): встречный сигнал следующего 15m-бара не должен давать
++    # второй ордер — иначе комиссии входа разойдутся с net_pnl (Review Focus 2).
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakdown()
++    emitted = [
++        order
++        for group in (s.on_bar(bar, _long_state(index)) for index, bar in enumerate(bars))
++        for order in group
++    ]
++    assert len(emitted) == 1  # сигнал бара №18 в силе, pending не израсходован
++    # Доводка группы №19: закрытие 99 — ниже обновлённого ll=99.5, т.е. живой
++    # встречный сигнал, а не пустой бар.
++    price = Decimal("99")
++    extra = [
++        Bar(
++            ts=START + 60 * (len(bars) + minute),
++            open=price,
++            high=price,
++            low=price,
++            close=price,
++            volume=ONE,
++        )
++        for minute in range(15)
++    ]
++    more = [
++        order
++        for group in (
++            s.on_bar(bar, _long_state(len(bars) + index)) for index, bar in enumerate(extra)
++        )
++        for order in group
++    ]
++    assert more == []
++
++
++def test_bias_filter_blocks_reversal_as_it_blocks_entry() -> None:
++    # Та же лента, что в тесте фильтра шорта (T8), но с позиция long +100:
++    # встречный сигнал блокируется фильтром уклона ровно как свежий вход.
++    s = TwoSidedMomentumStrategy(donch_len=Decimal("2"), bias_len=Decimal("2"))
++    bars = _downward_breakout(
++        [FLAT_PRICE] * 16 + [Decimal("110"), Decimal("110"), Decimal("108")]
++    )
++    filtered = [
++        order
++        for group in (s.on_bar(bar, _long_state(index)) for index, bar in enumerate(bars))
++        for order in group
++    ]
++    assert filtered == []
++    # Контраст с выключенным фильтром: переворот живой — ровно один SELL.
++    unfiltered = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    emitted = [
++        order
++        for group in (
++            unfiltered.on_bar(bar, _long_state(index)) for index, bar in enumerate(bars)
++        )
++        for order in group
++    ]
++    assert len(emitted) == 1 and emitted[0].side is Side.SELL
++
++
++def test_bracket_flat_call_emits_nothing() -> None:
++    # м16: знаковая обработка ветки брекета явная (`> 0` / `< 0` / иначе),
++    # плоскому вызову соответствует пустой список, а не стоп «наугад».
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    assert s._bracket_orders(_bars(1)[0], _flat_state(), Decimal("0.5")) == []

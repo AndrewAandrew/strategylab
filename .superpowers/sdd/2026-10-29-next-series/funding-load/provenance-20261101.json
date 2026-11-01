@@ -1,0 +1,38 @@
+[
+  {
+    "endpoint": "https://fapi.binance.com/fapi/v1/fundingRate",
+    "params": {
+      "symbol": "BTCUSDT",
+      "startTime": 1704067200000,
+      "endTime": 1793519528984,
+      "limit": 1000
+    },
+    "calls": 5,
+    "rows_fetched": 3106,
+    "rows_unique": 3106,
+    "rows_inserted": 3106,
+    "min_ts": 1704067200,
+    "max_ts": 1793491200,
+    "dry_run": false,
+    "db": "C:\\Users\\egoro\\Documents\\GitHub\\strategylab\\data\\btcusdt.db",
+    "loaded_at": "2026-11-01T07:52:13.872872+00:00"
+  },
+  {
+    "endpoint": "https://fapi.binance.com/fapi/v1/fundingRate",
+    "params": {
+      "symbol": "ETHUSDT",
+      "startTime": 1704067200000,
+      "endTime": 1793519528984,
+      "limit": 1000
+    },
+    "calls": 5,
+    "rows_fetched": 3106,
+    "rows_unique": 3106,
+    "rows_inserted": 3106,
+    "min_ts": 1704067200,
+    "max_ts": 1793491200,
+    "dry_run": false,
+    "db": "C:\\Users\\egoro\\Documents\\GitHub\\strategylab\\data\\ethusdt.db",
+    "loaded_at": "2026-11-01T07:52:18.427854+00:00"
+  }
+]

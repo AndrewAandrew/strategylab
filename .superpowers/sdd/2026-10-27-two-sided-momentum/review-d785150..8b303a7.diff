@@ -1,0 +1,90 @@
+# Review package: d785150..8b303a7
+
+## Commits
+8b303a7 fix: superseded mirrored stops leave the pending queue
+
+## Files changed
+ strategylab/broker/sim.py | 15 +++++++++++++++
+ tests/test_broker_sim.py  | 21 +++++++++++++++++++++
+ 2 files changed, 36 insertions(+)
+
+## Diff
+diff --git a/strategylab/broker/sim.py b/strategylab/broker/sim.py
+index 9598096..ad1012a 100644
+--- a/strategylab/broker/sim.py
++++ b/strategylab/broker/sim.py
+@@ -45,23 +45,38 @@ class BrokerSimulator:
+             self._mirror_reduced(order)
+         self._pending.append(order)
+ 
+     def _mirror_reduced(self, order: Order) -> None:
+         """reduce-only заявка зеркалит свой уровень в позицию.
+ 
+         STOP_MARKET зеркалит только уровень: стоп исполняется на весь
+         остаток позиции, размер зеркалу не нужен. LIMIT зеркалит уровень
+         и размер: тейк-профит на уменьшенной заявке исполняется её объёмом,
+         а не всей позицией — так работает частичная фиксация прибыли.
++
++        Устаревшее зеркало стопа снимается с покоя: уровень уже перезаписан
++        в позицию, resting-заявка того же направления никогда не исполнится
++        (`_apply_stops` пропускает reduce-only) и только оплачивает обход
++        `_pending` в apply_bar. LIMIT-цели не вытесняются: resting-цели
++        разных объёмов — разные частичные тейки, они должны доживать.
+         """
+         if order.kind is OrderKind.STOP_MARKET and order.stop_price is not None:
+             self._position.stop_price = order.stop_price
++            self._pending = [
++                resting
++                for resting in self._pending
++                if not (
++                    resting.reduce_only
++                    and resting.kind is OrderKind.STOP_MARKET
++                    and resting.side is order.side
++                )
++            ]
+         elif order.kind is OrderKind.LIMIT and order.limit_price is not None:
+             self._position.take_profit = order.limit_price
+             self._position.take_profit_qty = order.qty
+ 
+     def apply_bar(self, bar: Bar) -> list[Fill]:
+         fills = self._apply_stops(bar)
+         self._cancel_reduced()
+         fills += self._apply_exits(bar)
+         self._cancel_reduced()
+         self._apply_liquidation(bar)
+diff --git a/tests/test_broker_sim.py b/tests/test_broker_sim.py
+index 3271e64..ec1c72c 100644
+--- a/tests/test_broker_sim.py
++++ b/tests/test_broker_sim.py
+@@ -729,10 +729,31 @@ def test_partial_target_does_not_overwhelm_a_stop_on_the_same_bar() -> None:
+     costs = CostModel()
+     b = _open_bracketed_long()
+ 
+     fills = b.apply_bar(_bar((1717201200, "100", "108", "94", "100")))
+ 
+     assert [f.reason for f in fills] == ["stop"]
+     assert [f.qty for f in fills] == [Decimal("20")]
+     assert fills[0].price == Decimal("95") * (Decimal(1) - costs.slippage)
+     assert not b.position.is_open
+     assert b.pending_orders == []
++
++
++def test_second_stop_submit_replaces_the_resting_mirror() -> None:
++    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
++    b.submit(Order(Side.BUY, OrderKind.MARKET, Decimal("1"), None, None, False))
++    b.apply_bar(_bar((1, "100", "101", "99", "100")))
++    b.submit(Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("95"), True))
++    b.submit(Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("98"), True))
++    stops = [o for o in b.pending_orders if o.kind is OrderKind.STOP_MARKET]
++    assert len(stops) == 1 and stops[0].stop_price == Decimal("98")
++    assert b.position.stop_price == Decimal("98")
++
++
++def test_limit_mirror_is_not_deduplicated() -> None:
++    # Две reduce_only LIMIT разных объёмов — разные цели: движок обязан оставить обе.
++    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
++    b.submit(Order(Side.BUY, OrderKind.MARKET, Decimal("1"), None, None, False))
++    b.apply_bar(_bar((1, "100", "101", "99", "100")))
++    b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("0.4"), Decimal("105"), None, True))
++    b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("0.6"), Decimal("110"), None, True))
++    assert len([o for o in b.pending_orders if o.kind is OrderKind.LIMIT]) == 2

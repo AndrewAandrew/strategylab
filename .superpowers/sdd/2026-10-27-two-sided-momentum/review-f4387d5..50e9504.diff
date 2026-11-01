@@ -1,0 +1,224 @@
+# Review package: f4387d5..50e9504
+
+## Commits
+50e9504 feat: split trade metrics by position side
+
+## Files changed
+ strategylab/core/metrics.py | 71 ++++++++++++++++++++++++++++++++++++++-------
+ tests/test_metrics.py       | 32 ++++++++++++++++++++
+ 2 files changed, 93 insertions(+), 10 deletions(-)
+
+## Diff
+diff --git a/strategylab/core/metrics.py b/strategylab/core/metrics.py
+index e3ebc4f..3dbdea9 100644
+--- a/strategylab/core/metrics.py
++++ b/strategylab/core/metrics.py
+@@ -1,16 +1,63 @@
+ from __future__ import annotations
+ 
++from collections.abc import Sequence
+ from dataclasses import dataclass, field
+ from decimal import Decimal
+ 
+-from strategylab.broker.orders import Fill
++from strategylab.broker.orders import Fill, Side
++
++
++def profit_factor_of(pnls: Sequence[Decimal], losses: int) -> Decimal | None:
++    """gross_profit / gross_loss; None при отсутствии убыточных сделок."""
++    if losses == 0:
++        return None
++    gross_profit = sum((p for p in pnls if p > 0), Decimal("0"))
++    gross_loss = -sum((p for p in pnls if p < 0), Decimal("0"))
++    return gross_profit / gross_loss
++
++
++def win_rate_of(wins: int, trades: int) -> Decimal | None:
++    """Доля выигрышных сделок; None при отсутствии сделок."""
++    if trades == 0:
++        return None
++    return Decimal(wins) / Decimal(trades)
++
++
++@dataclass(slots=True)
++class SideMetrics:
++    """Накопитель закрытых сделок одной стороны позиции.
++
++    Своих формул отношений не держит: profit_factor и win_rate считает теми же
++    функциями модуля, что и Metrics, — третья копия разъехалась бы при первой правке.
++    """
++
++    trades: int = 0
++    wins: int = 0
++    losses: int = 0
++    net_pnl: Decimal = Decimal("0")
++    _pnls: list[Decimal] = field(default_factory=list, repr=False)
++
++    def record(self, pnl: Decimal) -> None:
++        self.trades += 1
++        if pnl > 0:
++            self.wins += 1
++        elif pnl < 0:
++            self.losses += 1
++        self.net_pnl += pnl
++        self._pnls.append(pnl)
++
++    def profit_factor(self) -> Decimal | None:
++        return profit_factor_of(self._pnls, self.losses)
++
++    def win_rate(self) -> Decimal | None:
++        return win_rate_of(self.wins, self.trades)
+ 
+ 
+ @dataclass(slots=True)
+ class Metrics:
+     """Накопитель результата прогона.
+ 
+     Чистый аккумулятор: книгу позиций не ведёт и pnl из fill не выводит —
+     реализованный pnl закрытой сделки передаёт вызывающий (движок).
+ 
+     `equity` — капитал прогона: стартовый капитал плюс накопленный реализованный
+@@ -18,55 +65,59 @@ class Metrics:
+     видит стратегия в `StrategyState.equity`, и при нуле стратегия с
+     риск-сайзингом не открывает позицию вовсе.
+     """
+ 
+     trades: int = 0
+     wins: int = 0
+     losses: int = 0
+     net_pnl: Decimal = Decimal("0")
+     equity: Decimal = Decimal("0")
+     max_drawdown: Decimal = Decimal("0")
++    long: SideMetrics = field(default_factory=SideMetrics)
++    short: SideMetrics = field(default_factory=SideMetrics)
+     _peak: Decimal = Decimal("0")
+     _pnls: list[Decimal] = field(default_factory=list, repr=False)
+ 
+     def __post_init__(self) -> None:
+         """Пик капитала стартует со стартового equity: просадка меряется от него, а не от нуля."""
+         self._peak = self.equity
+ 
+-    def record(self, fill: Fill, pnl: Decimal) -> None:
++    def record(self, fill: Fill, pnl: Decimal, side: Side | None = None) -> None:
++        """Учесть закрытую сделку.
++
++        `side` — сторона закрываемой позиции (не филла: у филла она противоположная).
++        Если задана, сделка дополнительно попадает в соответствующий `SideMetrics`.
++        """
+         self.trades += 1
+         if pnl > 0:
+             self.wins += 1
+         elif pnl < 0:
+             self.losses += 1
+         self.net_pnl += pnl
+         self.equity += pnl
+         self._pnls.append(pnl)
+         if self.equity > self._peak:
+             self._peak = self.equity
+         drawdown = self._peak - self.equity
+         if drawdown > self.max_drawdown:
+             self.max_drawdown = drawdown
++        if side is not None:
++            bucket = self.long if side is Side.BUY else self.short
++            bucket.record(pnl)
+ 
+     def profit_factor(self) -> Decimal | None:
+         """gross_profit / gross_loss; None при отсутствии убыточных сделок."""
+-        if self.losses == 0:
+-            return None
+-        gross_profit = sum((p for p in self._pnls if p > 0), Decimal("0"))
+-        gross_loss = -sum((p for p in self._pnls if p < 0), Decimal("0"))
+-        return gross_profit / gross_loss
++        return profit_factor_of(self._pnls, self.losses)
+ 
+     def win_rate(self) -> Decimal | None:
+         """Доля выигрышных сделок; None при отсутствии сделок."""
+-        if self.trades == 0:
+-            return None
+-        return Decimal(self.wins) / Decimal(self.trades)
++        return win_rate_of(self.wins, self.trades)
+ 
+     def sharpe(self) -> Decimal | None:
+         """mean(pnl) / population stddev(pnl); None при < 2 сделок или нулевом stddev."""
+         if self.trades < 2:
+             return None
+         n = Decimal(self.trades)
+         mean = sum(self._pnls, Decimal("0")) / n
+         variance = sum(((p - mean) ** 2 for p in self._pnls), Decimal("0")) / n
+         stddev = variance.sqrt()
+         if stddev == 0:
+diff --git a/tests/test_metrics.py b/tests/test_metrics.py
+index 461b911..4f51fd8 100644
+--- a/tests/test_metrics.py
++++ b/tests/test_metrics.py
+@@ -1,27 +1,32 @@
++from dataclasses import replace
+ from decimal import Decimal
+ 
+ from strategylab.broker.orders import Fill, Side
+ from strategylab.core.metrics import Metrics
+ 
+ 
+ def make_fill() -> Fill:
+     return Fill(
+         ts=1_717_200_000,
+         side=Side.BUY,
+         price=Decimal("50000"),
+         qty=Decimal("1"),
+         fee=Decimal("0"),
+         reason="close",
+     )
+ 
+ 
++def _fill(side: Side) -> Fill:
++    return replace(make_fill(), side=side)
++
++
+ def record(m: Metrics, pnl: str) -> None:
+     m.record(make_fill(), pnl=Decimal(pnl))
+ 
+ 
+ def test_empty_metrics_has_zero_fields_and_none_ratios() -> None:
+     m = Metrics()
+     assert m.trades == 0
+     assert m.wins == 0
+     assert m.losses == 0
+     assert m.net_pnl == Decimal("0")
+@@ -120,10 +125,37 @@ def test_max_drawdown_zero_when_equity_only_rises() -> None:
+ 
+ 
+ def test_net_pnl_and_equity_track_running_sum() -> None:
+     m = Metrics()
+     record(m, "10")
+     assert m.net_pnl == Decimal("10")
+     assert m.equity == Decimal("10")
+     record(m, "-4")
+     assert m.net_pnl == Decimal("6")
+     assert m.equity == Decimal("6")
++
++
++def test_record_splits_by_side() -> None:
++    m = Metrics(equity=Decimal("10000"))
++    m.record(_fill(Side.SELL), Decimal("-50"), Side.BUY)   # лонг закрыт в убыток
++    m.record(_fill(Side.BUY), Decimal("120"), Side.SELL)   # шорт закрыт в прибыль
++    assert m.long.trades == 1 and m.long.losses == 1
++    assert m.short.trades == 1 and m.short.wins == 1
++    assert m.long.net_pnl == Decimal("-50")
++    assert m.short.net_pnl == Decimal("120")
++    assert m.trades == 2 and m.net_pnl == Decimal("70")
++
++
++def test_side_profit_factor_is_none_without_losses() -> None:
++    m = Metrics()
++    m.record(_fill(Side.BUY), Decimal("10"), Side.BUY)
++    m.record(_fill(Side.BUY), Decimal("5"), Side.BUY)
++    assert m.long.profit_factor() is None
++    assert m.long.win_rate() == Decimal("1")
++    assert m.short.trades == 0 and m.short.profit_factor() is None
++
++
++def test_record_without_side_keeps_totals_only() -> None:
++    m = Metrics(equity=Decimal("10000"))
++    m.record(_fill(Side.SELL), Decimal("-5"))
++    assert m.trades == 1 and m.net_pnl == Decimal("-5")
++    assert m.long.trades == 0 and m.short.trades == 0

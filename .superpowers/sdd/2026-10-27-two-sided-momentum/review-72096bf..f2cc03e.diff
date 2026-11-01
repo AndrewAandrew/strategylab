@@ -1,0 +1,304 @@
+# Review package: 72096bf..f2cc03e
+
+## Commits
+f2cc03e feat: register two_sided_momentum and publish sides in sweep
+
+## Files changed
+ scripts/sweep.py                 | 15 +++++++++++
+ strategylab/strategy/examples.py |  4 +++
+ tests/test_examples.py           |  5 ++++
+ tests/test_sweep.py              | 58 +++++++++++++++++++++++++++++++++++++---
+ 4 files changed, 79 insertions(+), 3 deletions(-)
+
+## Diff
+diff --git a/scripts/sweep.py b/scripts/sweep.py
+index bd1b7fd..2252573 100644
+--- a/scripts/sweep.py
++++ b/scripts/sweep.py
+@@ -70,27 +70,34 @@ from strategylab.strategy.examples import STRATEGY_CLASSES, build
+ DEFAULT_CAPITAL = Decimal("10000")
+ 
+ # Метка прогона в шапке спека: развёртка — не `cli run`, версии спеков разные.
+ RULES_REF = "sweep"
+ 
+ # Реестр касаний зон: одна строка jsonl — одно касание не-fit зоны при одном
+ # прогоне развёртки. Файл в репозитории, имя закреплено.
+ TOUCH_REGISTRY = Path(__file__).resolve().parent.parent / "data" / "touch_registry.json"
+ 
+ # Колонки метрик в CSV: тот же набор, что в отчёте прогона.
++# Шесть боковых колонок идут после sharpe в этом порядке: их читает gates.py.
+ METRIC_COLUMNS = (
+     "trades",
+     "wins",
+     "net_pnl",
+     "max_drawdown",
+     "profit_factor",
+     "sharpe",
++    "long_trades",
++    "long_net_pnl",
++    "long_profit_factor",
++    "short_trades",
++    "short_net_pnl",
++    "short_profit_factor",
+ )
+ 
+ # Зоны, за касания которых отвечает реестр: fit — подбор, он свободен.
+ TOUCH_ROLES = (Zone.HOLDOUT, Zone.LIVE)
+ 
+ 
+ def _parse_ts(text: str) -> int:
+     """Время окна — целым Decimal-строкой: никакого float из argparse."""
+     try:
+         value = Decimal(text)
+@@ -317,20 +324,28 @@ def _row(report: Report, combination: Mapping[str, Decimal], names: Sequence[str
+     metrics = report.metrics
+     cells = [
+         report.spec_version,
+         *(_plain(combination[name]) for name in names),
+         str(metrics.trades),
+         str(metrics.wins),
+         _plain(metrics.net_pnl),
+         _plain(metrics.max_drawdown),
+         _plain_or_null(metrics.profit_factor()),
+         _plain_or_null(metrics.sharpe()),
++        # Стороны — сериализацией из report.py: trades/net_pnl через _plain,
++        # profit_factor None — маркером null.
++        str(metrics.long.trades),
++        _plain(metrics.long.net_pnl),
++        _plain_or_null(metrics.long.profit_factor()),
++        str(metrics.short.trades),
++        _plain(metrics.short.net_pnl),
++        _plain_or_null(metrics.short.profit_factor()),
+     ]
+     return ",".join(cells)
+ 
+ 
+ def _plain(value: Decimal) -> str:
+     """Decimal без экспоненты: CSV читается человеком и сравнивается diff-ом."""
+     return format(value, "f")
+ 
+ 
+ def _plain_or_null(value: Decimal | None) -> str:
+diff --git a/strategylab/strategy/examples.py b/strategylab/strategy/examples.py
+index 42fa6df..e6e752c 100644
+--- a/strategylab/strategy/examples.py
++++ b/strategylab/strategy/examples.py
+@@ -3,20 +3,21 @@ from __future__ import annotations
+ from collections import deque
+ from collections.abc import Mapping
+ from decimal import Decimal
+ 
+ from strategylab.broker.orders import Order, OrderKind, Side
+ from strategylab.core.bars import Bar
+ from strategylab.strategy.base import Strategy, StrategyState
+ from strategylab.strategy.flat_keltner import FlatKeltnerStrategy
+ from strategylab.strategy.sweep_liquidity import SweepLiquidityStrategy
+ from strategylab.strategy.trend_pullback import TrendPullbackStrategy
++from strategylab.strategy.two_sided_momentum import TwoSidedMomentumStrategy
+ 
+ 
+ class UnknownStrategy(Exception):
+     """Имя стратегии отсутствует в реестре."""
+ 
+ 
+ class SmaCrossStrategy:
+     """Пересечение двух скользящих средних: BUY на золотом, SELL на кресте смерти."""
+ 
+     name = "sma_cross"
+@@ -73,31 +74,34 @@ class BuyHoldStrategy:
+ # Реестр стратегий по именам: нужен там, где требуется сам класс, а не
+ # готовый экземпляр. `build` разбирает параметры по-своему (у `sma_cross`
+ # они обязательны), а инструменты вроде scripts/sweep.py берут из класса
+ # дефолты конструктора — иначе дефолтный параметр нечем заменить.
+ STRATEGY_CLASSES: dict[str, type[Strategy]] = {
+     "sma_cross": SmaCrossStrategy,
+     "buy_hold": BuyHoldStrategy,
+     "flat_keltner": FlatKeltnerStrategy,
+     "trend_pullback": TrendPullbackStrategy,
+     "sweep_liquidity": SweepLiquidityStrategy,
++    "two_sided_momentum": TwoSidedMomentumStrategy,
+ }
+ 
+ 
+ def build(name: str, params: Mapping[str, Decimal]) -> Strategy:
+     """Реестр стратегий: имя и параметры → экземпляр."""
+     if name == "sma_cross":
+         return SmaCrossStrategy(fast=params["fast"], slow=params["slow"])
+     if name == "buy_hold":
+         return BuyHoldStrategy()
+     if name == "flat_keltner":
+         return FlatKeltnerStrategy.from_params(params)
+     if name == "trend_pullback":
+         return TrendPullbackStrategy.from_params(params)
+     if name == "sweep_liquidity":
+         return SweepLiquidityStrategy.from_params(params)
++    if name == "two_sided_momentum":
++        return TwoSidedMomentumStrategy.from_params(params)
+     raise UnknownStrategy(name)
+ 
+ 
+ def _sma(values: deque[Decimal], n: int) -> Decimal:
+     window = list(values)[-n:]
+     return sum(window, Decimal("0")) / Decimal(len(window))
+diff --git a/tests/test_examples.py b/tests/test_examples.py
+index 6e59b39..44eda29 100644
+--- a/tests/test_examples.py
++++ b/tests/test_examples.py
+@@ -30,20 +30,25 @@ def _order_indices(result: list[tuple[int, list[Order]]]) -> list[int]:
+ def test_build_returns_sma_cross_with_params() -> None:
+     s = build("sma_cross", {"fast": Decimal("10"), "slow": Decimal("30")})
+     assert s.name == "sma_cross"
+ 
+ 
+ def test_build_returns_buy_hold() -> None:
+     s = build("buy_hold", {})
+     assert s.name == "buy_hold"
+ 
+ 
++def test_build_returns_two_sided_momentum() -> None:
++    s = build("two_sided_momentum", {})
++    assert s.name == "two_sided_momentum"
++
++
+ def test_build_unknown_name_raises() -> None:
+     with pytest.raises(UnknownStrategy):
+         build("нет_такой", {})
+ 
+ 
+ @pytest.mark.parametrize(
+     ("fast", "slow"),
+     [
+         (Decimal("10"), Decimal("0")),
+         (Decimal("10"), Decimal("-5")),
+diff --git a/tests/test_sweep.py b/tests/test_sweep.py
+index 4f794df..c06a998 100644
+--- a/tests/test_sweep.py
++++ b/tests/test_sweep.py
+@@ -5,39 +5,47 @@
+ """
+ 
+ from __future__ import annotations
+ 
+ import importlib.util
+ import json
+ from decimal import Decimal
+ from pathlib import Path
+ from types import ModuleType
+ 
+-from strategylab.core.bars import Bar
++from strategylab.broker.costs import CostModel, IntrabarOrder
++from strategylab.broker.orders import Side
++from strategylab.core.bars import Bar, Interval
++from strategylab.core.metrics import Metrics
+ from strategylab.data.schema import SCHEMA, connect
+ from strategylab.data.store import CandleStore
+ from strategylab.data.zones import Zone, assign_zone
++from strategylab.report.report import Report, build_report
++from strategylab.spec.spec import StrategySpec
++from strategylab.strategy.two_sided_momentum import TwoSidedMomentumStrategy
++from tests.test_metrics import make_fill
+ 
+ SYMBOL = "BTCUSDT"
+ START_TS = 1717200000  # 2024-06-01T00:00:00Z
+ WARMUP = 1529  # прогрев 5H при коротких длинах индикаторов
+ TAIL = 30
+ END_TS = START_TS + 60 * (WARMUP + 1 + TAIL)
+ PRICE = Decimal("100")
+ SPAN = Decimal("0.5")
+ DIP_LOW = Decimal("96.5")
+ 
+ _SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "sweep.py"
+ 
+ CSV_HEADER = (
+     "spec_version,adx_len,ema_len,atr_len_regime,atr_len_exit,exit_mult,"
+-    "trades,wins,net_pnl,max_drawdown,profit_factor,sharpe"
++    "trades,wins,net_pnl,max_drawdown,profit_factor,sharpe,"
++    "long_trades,long_net_pnl,long_profit_factor,short_trades,short_net_pnl,short_profit_factor"
+ )
+ 
+ EXIT_MULT_COLUMN = 5
+ 
+ 
+ def _load_sweep() -> ModuleType:
+     """Модуль скрипта по пути файла: scripts/ не пакет."""
+     spec = importlib.util.spec_from_file_location("sweep_script", _SCRIPT)
+     assert spec is not None
+     assert spec.loader is not None
+@@ -133,21 +141,21 @@ def test_sweep_prints_one_row_per_combination(tmp_path: Path, capsys) -> None:
+     db = tmp_path / "flat.db"
+     make_db(db)
+ 
+     _load_sweep().main(_argv(db))
+ 
+     out = capsys.readouterr().out
+     assert CSV_HEADER in out.splitlines()
+     rows = _rows(out)
+     assert len(rows) == 2
+     assert [row[EXIT_MULT_COLUMN] for row in rows] == ["1.5", "2"]
+-    assert all(len(row) == 12 for row in rows)
++    assert all(len(row) == 18 for row in rows)
+     # Сделка в каждой комбинации одна: сигнал на проколке, выход — по закрытию окна.
+     assert [row[6] for row in rows] == ["1", "1"]
+     # Размер разный (ширина стопа разная), значит и P&L разный.
+     assert rows[0][8] != rows[1][8]
+     assert "комбинаций: 2" in out
+ 
+ 
+ def test_sweep_skips_a_combination_rejected_by_the_strategy(tmp_path: Path, capsys) -> None:
+     """Параметр, не прошедший валидацию стратегии, пропускается: развёртка не падает."""
+     db = tmp_path / "flat.db"
+@@ -204,10 +212,54 @@ def test_touch_registry_silent_on_fit_only_window(tmp_path: Path, monkeypatch, c
+     module = _load_sweep()
+     registry = tmp_path / "touch_registry.json"
+     monkeypatch.setattr(module, "TOUCH_REGISTRY", registry)
+     db = tmp_path / "flat.db"
+     make_db(db)
+ 
+     module.main(_argv(db))
+     out = capsys.readouterr().out
+     assert "touches: holdout=0, live=0" in out
+     assert not registry.exists()
++
++
++# Реестр и стороны в CSV: дефолты из конструктора и шесть колонок SideMetrics
++
++
++def test_sweep_defaults_take_constructor_values() -> None:
++    """Гейт «≤3 свободных параметра»: ровно donch_len/atr_mult/bias_len из конструктора."""
++    sweep = _load_sweep()
++    assert sweep._defaults(TwoSidedMomentumStrategy) == {
++        "donch_len": Decimal("48"),
++        "atr_mult": Decimal("1.5"),
++        "bias_len": Decimal("48"),
++    }
++
++
++def report_with(metrics: Metrics) -> Report:
++    """Отчёт с заданными метриками: тот же idiom build_report, что в test_report.py."""
++    return build_report(
++        spec=StrategySpec(
++            name="two_sided_momentum",
++            symbol=SYMBOL,
++            interval=Interval.MINUTE,
++            start_ts=START_TS,
++            end_ts=END_TS,
++            params={"donch_len": Decimal("48")},
++            rules_ref="strategydocs/spec_01_two_sided_momentum_20261022.md",
++        ),
++        zones_used=(Zone.FIT,),
++        costs=CostModel(),
++        trials=1,
++        intrabar=IntrabarOrder.PESSIMISTIC,
++        metrics=metrics,
++    )
++
++
++def test_sweep_row_includes_side_columns() -> None:
++    sweep = _load_sweep()
++    metrics = Metrics(equity=Decimal("10000"))
++    fill = make_fill()
++    for pnl in (Decimal("-20"), Decimal("-20")):
++        metrics.record(fill, pnl, Side.BUY)
++    metrics.record(fill, Decimal("100"), Side.SELL)
++    row = sweep._row(report_with(metrics), {"donch_len": Decimal("48")}, ["donch_len"])
++    assert row.split(",")[-6:] == ["2", "-40", "0", "1", "100", "null"]

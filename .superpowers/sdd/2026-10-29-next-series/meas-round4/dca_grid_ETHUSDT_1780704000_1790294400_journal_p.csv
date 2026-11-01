@@ -1,0 +1,2 @@
+spec_version,combination,entry_ts,entry_price,exit_ts,exit_price,pnl,exit_reason
+d0aa8c638ce6,step=0.02; layers=4,1780707600,1569.297590,1790290800,2685.246705,3340.1891652690,market

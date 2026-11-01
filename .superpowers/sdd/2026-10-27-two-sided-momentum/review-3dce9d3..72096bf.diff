@@ -1,0 +1,528 @@
+# Review package: 3dce9d3..72096bf
+
+## Commits
+72096bf feat: trailing atr stop on both sides
+
+## Files changed
+ strategylab/strategy/two_sided_momentum.py | 118 ++++++++++++++--
+ tests/test_broker_sim.py                   |  42 ++++++
+ tests/test_strategy_two_sided_momentum.py  | 214 +++++++++++++++++++++++++++++
+ 3 files changed, 364 insertions(+), 10 deletions(-)
+
+## Diff
+diff --git a/strategylab/strategy/two_sided_momentum.py b/strategylab/strategy/two_sided_momentum.py
+index f550f23..ff20f17 100644
+--- a/strategylab/strategy/two_sided_momentum.py
++++ b/strategylab/strategy/two_sided_momentum.py
+@@ -7,34 +7,40 @@
+ где HH/LL считаются по предшествующему окну — без сигнального бара B. Фильтр
+ уклона — `bias_len`-сглаживание Уайлдера по Close 15m, `bias_len = 0` фильтр
+ выключает. Дистанция стопа — `atr_mult` × ATR(14), ATR Уайлдера заморожен на
+ баре-сигнале, поэтому ATR и bias считаются включая B.
+ 
+ Поток данных тот же, что у остальных стратегий: стратегия получает 1m-бары и
+ сама агрегирует 15m через `Aggregator` с якорем по эпохе; неполная группа в
+ расчёт не попадает. `atr_len = 14` и `risk_frac = 0.01` — константы модуля,
+ свободных параметров ровно три (Global Constraint 10).
+ 
+-Реализовано (задачи 7–9): вход в обе стороны, зеркальный стоп-брекет и
+-переворот встречным сигналом. На закрытии 15m-бара B, когда окно готово,
+-позиция плоская и исполнение не
+-ожидается, `Close(B) > hh` или `Close(B) < ll` (при включённом фильтре уклона
+-— соответственно и `Close(B) > bias` либо `Close(B) < bias`) порождает
+-MARKET-заявку с размером `equity · risk_frac / (atr_mult · ATR)`; ATR морозится
+-на баре сигнала. На баре исполнения входа вешается reduce_only STOP_MARKET по
++Реализовано (задачи 7–10): вход в обе стороны, зеркальный стоп-брекет,
++переворот встречным сигналом и трейлинг стопа. На закрытии 15m-бара B, когда
++окно готово, позиция плоская и исполнение не ожидается, `Close(B) > hh` или
++`Close(B) < ll` (при включённом фильтре уклона — соответственно и
++`Close(B) > bias` либо `Close(B) < bias`) порождает MARKET-заявку с размером
++`equity · risk_frac / (atr_mult · ATR)`; ATR морозится на баре сигнала. На баре
++исполнения входа вешается reduce_only STOP_MARKET по
+ `close − atr_mult · ATR_замороженный` для лонга и `close + atr_mult · ATR` для
+ шорта — стоп всегда с противоположной от входа стороны. Фиксированной цели в
+ спеке нет — LIMIT не выдаётся никогда. Встречный пробой при открытой позиции
+ переворачивает её одним MARKET объёма `abs(position) + qty` (задача 9): тот же
+-брекетный путь вешает стоп новой ноги на баре исполнения. Трейлинг (10)
+-надстраивается
+-следующей задачей плана.
++брекетный путь вешает стоп новой ноги на баре исполнения. Трейлинг (задача 10):
++на каждом закрытом 15m-баре при открытой позиции без ожидания исполнения
++кандидат `max_high_с_входа − atr_mult · ATR_текущий` для лонга (зеркально
++`min_low_с_входа + atr_mult · ATR_текущий` для шорта) подаётся reduce_only
++STOP_MARKET на весь объём позиции, только если строго лучше текущего уровня —
++лонговый стоп не опускается, шортовый не поднимается. ATR для кандидата живой:
++заморозка «на баре-сигнале» остаётся только шириной стопа на входе. Переворот
++перезапускает трейлинг с экстремумов и уровня новой ноги (решение R2); снятие
++позиции без ожидания исполнения очищает состояние трейлинга.
+ """
+ 
+ from __future__ import annotations
+ 
+ from collections import deque
+ from collections.abc import Mapping
+ from decimal import Decimal
+ 
+ from strategylab.broker.orders import Order, OrderKind, Side
+ from strategylab.core.bars import Bar
+@@ -99,20 +105,29 @@ class TwoSidedMomentumStrategy:
+ 
+         self._closed_15m = 0
+         self._hh: Decimal | None = None
+         self._ll: Decimal | None = None
+         self._atr_value: Decimal | None = None
+         self._bias_value: Decimal | None = None
+         # Сигнал дан, ждём исполнения: сторона входа и ATR, замороженный на баре
+         # сигнала. Задача 8 заполнила обе стороны; задачи 9–10 их расширяют.
+         self._pending_entry: Side | None = None
+         self._pending_atr: Decimal | None = None
++        # Состояние трейлинга (задача 10): экстремумы high/low с бара исполнения
++        # входа и текущий уровень стопа, который знает только стратегия — движок
++        # не эхо-ит брокерский стоп. Заводятся на выдаче брекета (`_init_trailing`
++        # вызывается из `_bracket_orders`), обновляются на закрытых 15m-барах,
++        # сбрасываются при снятии позиции без ожидания исполнения. None —
++        # трейлинга нет (позиция плоская, нога ещё не исполнена).
++        self._since_high: Decimal | None = None
++        self._since_low: Decimal | None = None
++        self._stop_level: Decimal | None = None
+ 
+     @classmethod
+     def from_params(cls, params: Mapping[str, Decimal]) -> TwoSidedMomentumStrategy:
+         """Стратегия из реестра: известные параметры — свои значения, неизвестные — ошибка."""
+         unknown = sorted(set(params) - set(cls.PARAM_NAMES))
+         if unknown:
+             raise ValueError(f"неизвестные параметры two_sided_momentum: {unknown}")
+         kwargs = {name: params[name] for name in cls.PARAM_NAMES if name in params}
+         return cls(**kwargs)
+ 
+@@ -124,28 +139,40 @@ class TwoSidedMomentumStrategy:
+     def on_bar(self, bar: Bar, state: StrategyState) -> list[Order]:
+         """Один 1m-бар: обновить агрегаты 15m, искать вход, вешать брекет.
+ 
+         Порядок как в FlatKeltnerStrategy.on_bar: сначала закрытие 15m-бара и
+         поиск сигнала входа (свежий вход — только при плоской позиции;
+         встречный сигнал при открытой — переворот одним MARKET, задача 9; при
+         ожидающем исполнении — молчание), затем — проверка, что выданный MARKET
+         уже исполнен: если позиция открыта в сторону ожидания (лонг при знаке
+         позиции > 0, шорт при < 0) и вход ожидается, на этом баре вешается
+         стоп-брекет и ожидающее состояние снимается.
++
++        Трейлинг (задача 10) живёт на закрытых 15m-барах: `_trailing_orders`
++        вызывается после поиска сигнала — на баре переворота pending уже
++        выставлен, и трейлинг прежней ноги молчит (жизненные циклы заявок
++        исключительны). Плоское состояние без ожидания снимает экстремумы и
++        уровень прежней ноги до остальной логики: мёртвого состояния трейлинга
++        не остаётся, чужими экстремумами `_trailing_orders` питаться не может.
+         """
+         orders: list[Order] = []
++        if state.position == 0 and self._pending_entry is None:
++            self._since_high = None
++            self._since_low = None
++            self._stop_level = None
+         bar15 = self._m15.update(bar)
+         if bar15 is not None:
+             self._update_15m(bar15)
+             entry = self._entry_order(bar15, state)
+             if entry is not None:
+                 orders.append(entry)
++            orders.extend(self._trailing_orders(bar15, state))
+         pending = self._pending_entry
+         filled = (pending is Side.BUY and state.position > 0) or (
+             pending is Side.SELL and state.position < 0
+         )
+         if filled:
+             # Вход исполнен на этом баре: цена входа оценивается его закрытием.
+             self._pending_entry = None
+             atr_pending = self._pending_atr
+             self._pending_atr = None
+             if atr_pending is not None:
+@@ -224,32 +251,103 @@ class TwoSidedMomentumStrategy:
+         что закладывалась в размер: `atr_mult · entry_atr`, с ATR, замороженным
+         на сигнальном баре. Стоп зеркален позиции: под лонгом (`position > 0`,
+         заявка SELL) и над шортом (`position < 0`, заявка BUY, объём — модуль
+         позиции). LIMIT-ордера нет: фиксированной цели в спеке нет.
+         """
+         entry = bar.close
+         distance = self._atr_mult * entry_atr
+         position = state.position
+         if position > 0:
+             stop = entry - distance
++            self._init_trailing(entry, stop)
+             return [Order(Side.SELL, OrderKind.STOP_MARKET, position, None, stop, True)]
+         elif position < 0:
+             # Шорт: зеркало — стоп над входом, объём снят по модулю позиции.
+             stop = entry + distance
++            self._init_trailing(entry, stop)
+             return [Order(Side.BUY, OrderKind.STOP_MARKET, -position, None, stop, True)]
+         else:
+             # Ветка недостижима из on_bar: брекет вешается только на исполненном
+             # входе, а исполненный знак позиции ненулевой по построению.
+             # Плоскому вызову всё равно соответствует явное «ничего»:
+             # implicit else прятал бы рассогласование pending с движком (м16).
+             return []
+ 
++    def _init_trailing(self, entry_price: Decimal, stop: Decimal) -> None:
++        """Завести состояние трейлинга; момент заводки — выдача стоп-брекета.
++
++        Выбранный момент инициализации: экстремумы стартуют с оценки входа
++        (close бара исполнения — той же цены, от которой отмерен стоп), а
++        уровень — с выданного стопа. Движок не отдаёт стратегии ни цену
++        исполнения, ни брокерский стоп: единственный бар, где стратегия
++        достоверно знает и вход, и стоп, — выдача брекета. Группа входа
++        закроется позже, её фактические high/low доедут в экстремумы на
++        закрытии. На перевороте этот же вызов из брекетного пути
++        перезапускает трейлинг с экстремумов и уровня НОВОЙ ноги — прежняя
++        нога не протаскивает свои максимумы и минимумы через флип
++        (решение R2).
++        """
++        self._since_high = entry_price
++        self._since_low = entry_price
++        self._stop_level = stop
++
++    def _trailing_orders(self, bar15: Bar, state: StrategyState) -> list[Order]:
++        """Трейлинг ATR-стопа на закрытом 15m-баре при открытой позиции.
++
++        Спека §Правила: LONG stop = max(стоп, max High с входа − atr_mult·ATR),
++        только вверх; для шорта зеркально от min Low, только вниз. Экстремумы
++        обновляются баром B ДО вычисления кандидата (high бара входит в «max с
++        входа»), ATR берётся ТЕКУЩИЙ `_atr_value`, не замороженный: заморозка
++        «на баре-сигнале» остаётся шириной стопа на входе, трейлинг по спеке
++        живёт на живом значении. Заявка — reduce_only STOP_MARKET на весь
++        объём позиции, и только когда кандидат СТРОГО лучше уровня: на уровне
++        или хуже — пустой список, лонговый стоп не опускается, шортовый не
++        поднимается (без строгого «лучше» тот же уровень перезаказывался бы
++        каждый бар, и трейл превращался бы в дрейф стопа). Пока вход/брекет ожидается, трейлинг
++        молчит: `_pending_entry` исключает трейл из жизненного цикла заявки.
++        Без состояния (позиция исполнена, но брекет ещё не выдан — середина
++        бара исполнения; либо позиция снята — поля сброшены) и до границы
++        warmup (`_atr_value is None`) — тоже пустой список.
++        """
++        if state.position == 0 or self._pending_entry is not None:
++            return []
++        since_high = self._since_high
++        since_low = self._since_low
++        level = self._stop_level
++        atr = self._atr_value
++        if since_high is None or since_low is None or level is None or atr is None:
++            return []
++        position = state.position
++        if position > 0:
++            self._since_high = since_high = max(since_high, bar15.high)
++            candidate = since_high - self._atr_mult * atr
++            if candidate > level:
++                self._stop_level = candidate
++                return [
++                    Order(Side.SELL, OrderKind.STOP_MARKET, position, None, candidate, True)
++                ]
++            return []
++        elif position < 0:
++            self._since_low = since_low = min(since_low, bar15.low)
++            candidate = since_low + self._atr_mult * atr
++            if candidate < level:
++                self._stop_level = candidate
++                return [
++                    Order(Side.BUY, OrderKind.STOP_MARKET, -position, None, candidate, True)
++                ]
++            return []
++        else:
++            # Как и в _bracket_orders (м16): знак нуля сюда недостижим из
++            # on_bar — первый страж уже отсёк плоскую позицию, — но ветка
++            # обязана быть явной, а не implicit else.
++            return []
++
+     def _update_15m(self, bar15: Bar) -> None:
+         """Закрытый 15m-бар B: ATR и bias включая B, Дончиан по окну без B.
+ 
+         Порядок фиксации спеки: hh/ll считаются по содержимому окна ДО
+         добавления B (последние `donch_len` завершённых баров перед сигналом),
+         ATR и bias — включая B: сигнальный бар и есть бар B, а стоп
+         замораживается на нём.
+ 
+         Состояние наружу — только после границы warmup: должно пройти
+         `max(donch_len, _ATR_LEN)` закрытых 15m-баров, сигнальным становится
+diff --git a/tests/test_broker_sim.py b/tests/test_broker_sim.py
+index ec1c72c..5d2e2b4 100644
+--- a/tests/test_broker_sim.py
++++ b/tests/test_broker_sim.py
+@@ -750,10 +750,52 @@ def test_second_stop_submit_replaces_the_resting_mirror() -> None:
+ 
+ 
+ def test_limit_mirror_is_not_deduplicated() -> None:
+     # Две reduce_only LIMIT разных объёмов — разные цели: движок обязан оставить обе.
+     b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
+     b.submit(Order(Side.BUY, OrderKind.MARKET, Decimal("1"), None, None, False))
+     b.apply_bar(_bar((1, "100", "101", "99", "100")))
+     b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("0.4"), Decimal("105"), None, True))
+     b.submit(Order(Side.SELL, OrderKind.LIMIT, Decimal("0.6"), Decimal("110"), None, True))
+     assert len([o for o in b.pending_orders if o.kind is OrderKind.LIMIT]) == 2
++
++
++# Трейлинг ATR-стопа после входа (задача 10): гэп и лестница перезаказов
++
++
++def test_short_trailing_stop_fills_on_gap_up() -> None:
++    """Гэп выше resting-СТОПа шорта: PESSIMISTIC выбивает стоп по open бара.
++
++    Шорт открыт MARKET SELL (исполнение по close первого бара), поверх него
++    отдыхает reduce-only BUY STOP_MARKET на 96 — уровень трейла. Второй бар
++    открывается на 99, то есть гэпом ВЫШЕ стопа, а high 101 доходит до уровня
++    лишь из гэпа: стоп обязан исполниться по open, а не по 96.
++    """
++    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
++    b.submit(Order(Side.SELL, OrderKind.MARKET, Decimal("1"), None, None, False))
++    b.apply_bar(_bar((1, "99", "101", "94", "100")))
++    assert (b.position.side, b.position.qty) == (Side.SELL, Decimal("1"))
++    b.submit(Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("96"), True))
++    fills = b.apply_bar(_bar((2, "99", "101", "94", "100")))
++    assert fills[0].reason == "stop"
++    assert fills[0].price > Decimal("96")
++
++
++def test_ten_trailing_stop_resubmits_leave_one_resting_order() -> None:
++    """Лестница из десяти перезаказов трейла: в очереди остаётся один стоп.
++
++    Dedup Task 5 под нагрузкой: каждый следующий reduce-only STOP_MARKET той
++    же стороны вытесняет предыдущего предшественника, накопления нет.
++    """
++    b = BrokerSimulator(CostModel(), IntrabarOrder.PESSIMISTIC)
++    b.submit(Order(Side.SELL, OrderKind.MARKET, Decimal("1"), None, None, False))
++    b.apply_bar(_bar((1, "99", "101", "94", "100")))
++    for level in range(10):
++        b.submit(
++            Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal(level), True)
++        )
++    stops = [o for o in b.pending_orders if o.kind is OrderKind.STOP_MARKET]
++    assert len(b.pending_orders) == 1
++    assert stops == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("1"), None, Decimal("9"), True)
++    ]
++    assert b.position.stop_price == Decimal("9")
+diff --git a/tests/test_strategy_two_sided_momentum.py b/tests/test_strategy_two_sided_momentum.py
+index d53bfcc..3f96ae2 100644
+--- a/tests/test_strategy_two_sided_momentum.py
++++ b/tests/test_strategy_two_sided_momentum.py
+@@ -506,10 +506,224 @@ def test_bias_filter_blocks_reversal_as_it_blocks_entry() -> None:
+     assert len(emitted) == 1 and emitted[0].side is Side.SELL
+ 
+ 
+ def test_bracket_flat_call_emits_nothing() -> None:
+     # м16: знаковая обработка ветки брекета явная (`> 0` / `< 0` / иначе),
+     # плоскому вызову соответствует пустой список, а не стоп «наугад».
+     s = TwoSidedMomentumStrategy(
+         donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
+     )
+     assert s._bracket_orders(_bars(1)[0], _flat_state(), Decimal("0.5")) == []
++
++
++# Трейлинг ATR-стопа после входа (задача 10)
++
++
++def _group_orders(
++    strategy: TwoSidedMomentumStrategy,
++    first: int,
++    members: list[tuple[Decimal, Decimal, Decimal, Decimal]],
++    position: Decimal,
++) -> list[Order]:
++    """Прогон 1m-баров группы (o, h, l, c), идущих подряд с индекса `first`.
++
++    Возвращает все ордера группы одним списком: позиция в состоянии одна и та
++    же на всю группу — движок в этих тестах смонирован externally.
++    """
++    emitted: list[Order] = []
++    state = StrategyState(position=position, equity=EQUITY, bar_index=first)
++    for minute, (open_, high, low, close) in enumerate(members):
++        emitted.append(
++            strategy.on_bar(
++                Bar(
++                    ts=START + 60 * (first + minute),
++                    open=open_,
++                    high=high,
++                    low=low,
++                    close=close,
++                    volume=ONE,
++                ),
++                state,
++            )
++        )
++    return [order for group in emitted for order in group]
++
++
++def _trail_long_to_high_105(s: TwoSidedMomentumStrategy) -> list[Order]:
++    """Реальный вход лонга и лестница трейла до закрытого 15m-бара с high 105.
++
++    Вход: `_bars_then_breakout()` (сигнал №18, замороженный ATR 0.5). Исполнение
++    — нулевая минута группы №19 плоским 1m-баром close=100: брекет SELL на 99
++    там же заводит состояние трейлинга (уровень 99, экстремумы 100/100). Далее
++    группа №19 закрывается баром H=100.5/L=100/C=100.5 (TR ровно 0.5 — ATR
++    Уайлдера остаётся ровно 0.5), а восемь лестничных групп №20–№28 поднимают
++    high на 0.5 за бар до 105: каждый шаг — истинный диапазон 0.5, ATR 0.5 без
++    изменения. Возвращает ордера финальной лестницы (bar high 105).
++    """
++    bars = _bars_then_breakout()
++    _run_strategy(s, bars)
++    flat = FLAT_PRICE
++    h105 = Decimal("105")
++    step = Decimal("0.5")
++    # Нулевая минута группы №19: close 100 → брекет 99 и инициализация трейла.
++    assert _group_orders(s, len(bars), [(flat, flat, flat, flat)], Decimal("100")) == [
++        Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("99"), True)
++    ]
++    # Закрытие группы №19: H=100.5, L=100, C=100.5 — TR 0.5, трейл на 99.5.
++    assert _group_orders(
++        s,
++        len(bars) + 1,
++        [(Decimal("100"), Decimal("100.5"), Decimal("100"), Decimal("100.5"))] * 14,
++        Decimal("100"),
++    ) == [Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("99.5"), True)]
++    # Лестница №20–№28: close каждого бара = high = prev close + 0.5 (TR 0.5);
++    # встречных сигналов нет (шаг вверх — тот же блок one-order-per-fill уже
++    # закреплял в тесте блокировки лонга при лонге).
++    orders: list[Order] = []
++    index = len(bars) + 15
++    price = Decimal("100.5")
++    for _ in range(9):
++        top = price + step
++        orders = _group_orders(
++            s,
++            index,
++            [(price, top, price, top)] * 15,
++            Decimal("100"),
++        )
++        price = top
++        index += 15
++    # price == 105: финальный бар — тот самый high 105 при ATR 0.5.
++    assert price == h105
++    return orders
++
++
++def test_long_stop_trails_up_only() -> None:
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    orders = _trail_long_to_high_105(s)
++    # Закрытый 15m-бар с high 105 при ATR ровно 0.5: candidate 104 = 105 − 2×0.5
++    # (живой ATR, не замороженный) лучше уровня 103.5 → единственный ордер.
++    assert orders == [
++        Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("104"), True)
++    ]
++    # Следующий бар не лучше: high остаётся 105 (экстремум не уменьшается),
++    # TR 0.5 → ATR 0.5 → candidate ровно 104 = уровень: строгое «лучше» не
++    # выполнено, повторной заявки нет — стоп не переставляется на месте.
++    flat_again = _group_orders(
++        s,
++        270 + 15 * 10,
++        [(Decimal("104.5"), Decimal("105"), Decimal("104.5"), Decimal("105"))] * 15,
++        Decimal("100"),
++    )
++    assert flat_again == []
++
++
++def test_short_stop_trails_down_only() -> None:
++    # Зеркало: вход шорта, брекет 101, лестница вниз до low 95, candidate
++    # 96 = 95 + 2×0.5 (живой ATR 0.5) — ровно pinned-уровень.
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakdown()
++    _run_strategy(s, bars)
++    flat = FLAT_PRICE
++    step = Decimal("0.5")
++    assert _group_orders(s, len(bars), [(flat, flat, flat, flat)], Decimal("-100")) == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("101"), True)
++    ]
++    assert _group_orders(
++        s,
++        len(bars) + 1,
++        [(Decimal("99.5"), Decimal("100"), Decimal("99.5"), Decimal("99.5"))] * 14,
++        Decimal("-100"),
++    ) == [Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("100.5"), True)]
++    orders: list[Order] = []
++    index = len(bars) + 15
++    price = Decimal("99.5")
++    for _ in range(9):
++        bottom = price - step
++        orders = _group_orders(s, index, [(price, price, bottom, bottom)] * 15, Decimal("-100"))
++        price = bottom
++        index += 15
++    assert price == Decimal("95")  # финальный бар: low 95 при ATR 0.5
++    assert orders == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("96"), True)
++    ]
++    # Зеркальный «не лучше»: low остаётся 95, candidate ровно 96 = уровень —
++    # заявка не повторяется.
++    again = _group_orders(
++        s,
++        270 + 15 * 10,
++        [(Decimal("95"), Decimal("95.5"), Decimal("95"), Decimal("95.5"))] * 15,
++        Decimal("-100"),
++    )
++    assert again == []
++
++
++def test_flatten_clears_trailing_state() -> None:
++    # Плоское состояние без ожидания снимает экстремумы и уровень: мёртвых
++    # полей нет, новая нога не может унаследовать старые значения.
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    _trail_long_to_high_105(s)
++    assert s._stop_level is not None and s._since_high is not None
++    for bar in _bars(15, first=270 + 15 * 10):  # группа №29 при позиции 0
++        s.on_bar(bar, _flat_state())
++    assert s._stop_level is None and s._since_high is None and s._since_low is None
++
++
++def test_reversal_reinitialises_trailing_on_new_leg() -> None:
++    # R2: переворот перезапускает трейлинг с экстремумов и уровня НОВОЙ ноги.
++    # Старый лонг оттрейлен до high 105 (уровень стопа 104); переворот — баром
++    # с истинным диапазоном 7.5 (ATR после него ровно 1.0), qty = 100 + 50;
++    # исполнение — flat-баром close 97.5: брекет BUY на 99.5 = 97.5 + 2×1.0
++    # и сброс экстремумов на 97.5. Первый закрытый бар новой ноги: L=97.5,
++    # H=98.5, C=98 (TR 1.0 — ATR остаётся ровно 1.0) → candidate 97.5 + 2×1.0
++    # = 99.5 = новый уровень: строго «лучше» нет → [] — со старым уровнем 104
++    # стратегия ошибочно переставила бы стоп новой ноги на 99.5.
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    _trail_long_to_high_105(s)
++    assert s._stop_level == Decimal("104") and s._since_high == Decimal("105")
++    # Бар переворота (группа №29): close 97.5 < ll=104, TR=7.5 → ATR ровно 1.0.
++    reversed_bar = _group_orders(
++        s,
++        270 + 15 * 10,
++        [(Decimal("97.5"), Decimal("104"), Decimal("97.5"), Decimal("97.5"))] * 15,
++        Decimal("100"),
++    )
++    assert reversed_bar == [Order(Side.SELL, OrderKind.MARKET, Decimal("150"), None, None, False)]
++    # Исполнение переворота: +100 − 150 = −50, брекет новой ноги на 99.5.
++    fill = _group_orders(
++        s,
++        270 + 15 * 11,
++        [(Decimal("97.5"), Decimal("97.5"), Decimal("97.5"), Decimal("97.5"))],
++        Decimal("-50"),
++    )
++    assert fill == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("50"), None, Decimal("99.5"), True)
++    ]
++    assert s._since_high == Decimal("97.5") and s._stop_level == Decimal("99.5")
++    # Закрытие группы №30 (14 минут): H=98.5, L=97.5, C=98 → TR 1.0, ATR 1.0;
++    # candidate 99.5 = уровень — повторной заявки нет (со старым уровнем 104
++    # была бы — это и есть отравление экстремумами прежней ноги).
++    hold = _group_orders(
++        s,
++        270 + 15 * 11 + 1,
++        [(Decimal("97.5"), Decimal("98.5"), Decimal("97.5"), Decimal("98"))] * 14,
++        Decimal("-50"),
++    )
++    assert hold == []
++    # Новый экстремум шортовой ноги (low 97) даёт candidate 99 < 99.5: заявка
++    # идёт от экстремумов новой ноги, старый high 105 в расчёт не попал.
++    trail = _group_orders(
++        s,
++        270 + 15 * 12,
++        [(Decimal("97.5"), Decimal("98"), Decimal("97"), Decimal("97.5"))] * 15,
++        Decimal("-50"),
++    )
++    assert trail == [
++        Order(Side.BUY, OrderKind.STOP_MARKET, Decimal("50"), None, Decimal("99"), True)
++    ]

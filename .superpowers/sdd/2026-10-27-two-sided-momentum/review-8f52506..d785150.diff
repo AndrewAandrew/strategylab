@@ -1,0 +1,362 @@
+# Review package: 8f52506..d785150
+
+## Commits
+d785150 feat: report publishes long and short metrics separately
+
+## Files changed
+ strategylab/report/report.py | 12 +++++++++
+ tests/test_cli.py            | 26 ++++++++++++++------
+ tests/test_report.py         | 58 +++++++++++++++++++++++++++++++++++++++++---
+ 3 files changed, 86 insertions(+), 10 deletions(-)
+
+## Diff
+diff --git a/strategylab/report/report.py b/strategylab/report/report.py
+index 466cd39..7fbd5c9 100644
+--- a/strategylab/report/report.py
++++ b/strategylab/report/report.py
+@@ -56,20 +56,26 @@ class Report:
+             f"intrabar: {self.intrabar.name}",
+             f"trades: {m.trades}",
+             f"wins: {m.wins}",
+             f"losses: {m.losses}",
+             f"net_pnl: {_plain(m.net_pnl)}",
+             f"equity: {_plain(m.equity)}",
+             f"max_drawdown: {_plain(m.max_drawdown)}",
+             f"profit_factor: {_plain_or_null(m.profit_factor())}",
+             f"win_rate: {_plain_or_null(m.win_rate())}",
+             f"sharpe: {_plain_or_null(m.sharpe())}",
++            f"long_trades: {m.long.trades}",
++            f"long_net_pnl: {_plain(m.long.net_pnl)}",
++            f"long_profit_factor: {_plain_or_null(m.long.profit_factor())}",
++            f"short_trades: {m.short.trades}",
++            f"short_net_pnl: {_plain(m.short.net_pnl)}",
++            f"short_profit_factor: {_plain_or_null(m.short.profit_factor())}",
+         ))
+ 
+     def to_json(self) -> str:
+         """JSON отчёта: фиксированный порядок ключей — пять полей шапки, затем метрики.
+ 
+         Поля метрик перечислены белым списком: у Metrics есть приватные накопители,
+         которые asdict/vars выдали бы в отчёт. Decimal — строкой, None — как null.
+         """
+         m = self.metrics
+         payload: dict[str, Any] = {
+@@ -85,20 +91,26 @@ class Report:
+             "intrabar": self.intrabar.name,
+             "trades": m.trades,
+             "wins": m.wins,
+             "losses": m.losses,
+             "net_pnl": _plain(m.net_pnl),
+             "equity": _plain(m.equity),
+             "max_drawdown": _plain(m.max_drawdown),
+             "profit_factor": _optional_plain(m.profit_factor()),
+             "win_rate": _optional_plain(m.win_rate()),
+             "sharpe": _optional_plain(m.sharpe()),
++            "long_trades": m.long.trades,
++            "long_net_pnl": _plain(m.long.net_pnl),
++            "long_profit_factor": _optional_plain(m.long.profit_factor()),
++            "short_trades": m.short.trades,
++            "short_net_pnl": _plain(m.short.net_pnl),
++            "short_profit_factor": _optional_plain(m.short.profit_factor()),
+         }
+         return json.dumps(payload)
+ 
+ 
+ def build_report(
+     spec: StrategySpec,
+     zones_used: tuple[Zone, ...] | None,
+     costs: CostModel | None,
+     trials: int | None,
+     intrabar: IntrabarOrder,
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index 70a7d91..8b072f6 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -94,33 +94,45 @@ def test_run_prints_both_reports_and_verdict(tmp_path: Path, capsys) -> None:
+             "intrabar: PESSIMISTIC",
+             "trades: 1",
+             "wins: 0",
+             "losses: 1",
+             "net_pnl: -127.083013460",
+             "equity: 9872.916986540",
+             "max_drawdown: 127.083013460",
+             "profit_factor: 0",
+             "win_rate: 0",
+             "sharpe: null",
++            "long_trades: 1",
++            "long_net_pnl: -127.083013460",
++            "long_profit_factor: 0",
++            "short_trades: 0",
++            "short_net_pnl: 0",
++            "short_profit_factor: null",
+         ]
+         + header_lines(spec.version)
+         + [
+             "intrabar: OPTIMISTIC",
+             "trades: 1",
+             "wins: 0",
+             "losses: 1",
+             "net_pnl: -127.083013460",
+             "equity: 9872.916986540",
+             "max_drawdown: 127.083013460",
+             "profit_factor: 0",
+             "win_rate: 0",
+             "sharpe: null",
++            "long_trades: 1",
++            "long_net_pnl: -127.083013460",
++            "long_profit_factor: 0",
++            "short_trades: 0",
++            "short_net_pnl: 0",
++            "short_profit_factor: null",
+         ]
+         + ["ВЕРДИКТ: измерима"]
+     )
+     assert out.splitlines() == expected
+ 
+ 
+ def test_run_parses_strategy_params_as_decimal_strings(tmp_path: Path, capsys) -> None:
+     db = tmp_path / "bars.db"
+     make_db(db)
+     main(
+@@ -136,24 +148,24 @@ def test_run_parses_strategy_params_as_decimal_strings(tmp_path: Path, capsys) -
+             "fast=2",
+             "--param",
+             "slow=3",
+         ]
+     )
+     lines = capsys.readouterr().out.splitlines()
+     spec = make_spec("sma_cross", {"fast": Decimal("2"), "slow": Decimal("3")})
+     assert lines[0:4] == header_lines(spec.version)
+     assert lines[4] == "intrabar: PESSIMISTIC"
+     assert lines[5] == "trades: 0"
+-    assert lines[14:18] == header_lines(spec.version)
+-    assert lines[18] == "intrabar: OPTIMISTIC"
+-    assert lines[19] == "trades: 0"
+-    assert lines[28] == "ВЕРДИКТ: измерима"
++    assert lines[20:24] == header_lines(spec.version)
++    assert lines[24] == "intrabar: OPTIMISTIC"
++    assert lines[25] == "trades: 0"
++    assert lines[40] == "ВЕРДИКТ: измерима"
+ 
+ 
+ # run: начальный капитал контракта
+ 
+ # Серия для flat_keltner: пила без направления (ADX держится нулём) и проколка
+ # вниз в последней минуте 15m-бара — это сигнал на вход.
+ FLAT_WARMUP = 1529
+ FLAT_TAIL = 30
+ FLAT_END_TS = START_TS + 60 * (FLAT_WARMUP + 1 + FLAT_TAIL)
+ FLAT_PRICE = Decimal("100")
+@@ -235,49 +247,49 @@ def _flat_argv(db: Path, *extra: str) -> list[str]:
+ 
+ def test_run_trades_when_capital_is_given(tmp_path: Path, capsys) -> None:
+     """С капиталом риск-сайзинг открывает позицию: сделка есть, капитал в equity."""
+     db = tmp_path / "flat.db"
+     make_flat_db(db)
+ 
+     main(_flat_argv(db, "--capital", "10000"))
+ 
+     lines = capsys.readouterr().out.splitlines()
+     assert lines[5] == "trades: 1"
+-    assert lines[19] == "trades: 1"
++    assert lines[25] == "trades: 1"
+     # Капитал в equity: 10000 старта и −8.8 по сделке (комиссии обеих сторон
+     # и увод сведённого филла), просадка — от капитала.
+     assert lines[9] == "equity: 9991.200000000"
+     assert lines[10] == "max_drawdown: 8.800000000"
+ 
+ 
+ def test_run_without_capital_trades_by_default(tmp_path: Path, capsys) -> None:
+     """Без флага капитал дефолтный: стратегия с риск-сайзингом торгует."""
+     db = tmp_path / "flat.db"
+     make_flat_db(db)
+ 
+     main(_flat_argv(db))
+ 
+     lines = capsys.readouterr().out.splitlines()
+     assert lines[5] == "trades: 1"
+-    assert lines[19] == "trades: 1"
++    assert lines[25] == "trades: 1"
+ 
+ 
+ def test_run_does_not_trade_with_zero_capital(tmp_path: Path, capsys) -> None:
+     """Капитал 0 — прогон без капитала: размер сделки нулевой, сделок нет."""
+     db = tmp_path / "flat.db"
+     make_flat_db(db)
+ 
+     main(_flat_argv(db, "--capital", "0"))
+ 
+     lines = capsys.readouterr().out.splitlines()
+     assert lines[5] == "trades: 0"
+-    assert lines[19] == "trades: 0"
++    assert lines[25] == "trades: 0"
+     assert lines[9] == "equity: 0"
+ 
+ 
+ def test_run_rejects_a_capital_that_is_not_a_decimal(tmp_path: Path) -> None:
+     """Капитал не Decimal-строка — ошибка argparse с кодом 2."""
+     db = tmp_path / "flat.db"
+     make_flat_db(db)
+ 
+     with pytest.raises(SystemExit) as exit_info:
+         main(_flat_argv(db, "--capital", "десять тысяч"))
+diff --git a/tests/test_report.py b/tests/test_report.py
+index 0e73fcd..7b60dee 100644
+--- a/tests/test_report.py
++++ b/tests/test_report.py
+@@ -1,11 +1,12 @@
+ import json
++from collections.abc import Sequence
+ from decimal import Decimal
+ from types import SimpleNamespace
+ from typing import Any, cast
+ 
+ import pytest
+ 
+ from strategylab.broker.costs import CostModel, IntrabarOrder
+ from strategylab.broker.orders import Fill, Side
+ from strategylab.core.bars import Interval
+ from strategylab.core.metrics import Metrics
+@@ -81,75 +82,120 @@ def test_to_text_puts_header_in_first_five_lines() -> None:
+     report = build_report(
+         spec=spec,
+         zones_used=(Zone.FIT, Zone.HOLDOUT),
+         costs=CostModel(),
+         trials=7,
+         intrabar=IntrabarOrder.OPTIMISTIC,
+         metrics=Metrics(),
+     )
+     assert isinstance(report, Report)
+     lines = report.to_text().splitlines()
+-    assert len(lines) == 14
++    assert len(lines) == 20
+     assert lines[0] == f"spec_version: {spec.version}"
+     assert lines[1] == "zones_used: fit, holdout"
+     assert lines[2].startswith("costs: taker_fee=")
+     assert "leverage=1" in lines[2]
+     assert lines[3] == "trials: 7"
+     assert lines[4] == "intrabar: OPTIMISTIC"
+     assert lines[5] == "trades: 0"
+     assert lines[6] == "wins: 0"
+     assert lines[7] == "losses: 0"
+     assert lines[8] == "net_pnl: 0"
+     assert lines[9] == "equity: 0"
+     assert lines[10] == "max_drawdown: 0"
+     assert lines[11] == "profit_factor: null"
+     assert lines[12] == "win_rate: null"
+     assert lines[13] == "sharpe: null"
++    assert lines[14] == "long_trades: 0"
++    assert lines[15] == "long_net_pnl: 0"
++    assert lines[16] == "long_profit_factor: null"
++    assert lines[17] == "short_trades: 0"
++    assert lines[18] == "short_net_pnl: 0"
++    assert lines[19] == "short_profit_factor: null"
+ 
+ 
+ def make_report_with_metrics(
+     trades: int = 0,
+     wins: int = 0,
+     losses: int = 0,
++    long_pnls: Sequence[Decimal] = (),
++    short_pnls: Sequence[Decimal] = (),
+ ) -> Report:
+-    """Отчёт с метриками, собранными записью fills: выигрыш +10+i, убыток -(10+j)."""
++    """Отчёт с метриками, собранными записью fills: выигрыш +10+i, убыток -(10+j).
++
++    long_pnls/short_pnls записываются теми же вызовами metrics.record, но с
++    стороной закрываемой позиции — стороны копят те же сделки, что и итог.
++    """
+     if wins + losses > trades:
+         raise ValueError("wins + losses cannot exceed trades")
+     metrics = Metrics()
+     fill = Fill(
+         ts=1_717_200_000,
+         side=Side.SELL,
+         price=Decimal("100"),
+         qty=Decimal("1"),
+         fee=Decimal("0"),
+         reason="close",
+     )
+     for index in range(wins):
+         metrics.record(fill, Decimal(10 + index))
+     for index in range(losses):
+         metrics.record(fill, Decimal(-(10 + index)))
+     for _ in range(trades - wins - losses):
+         metrics.record(fill, Decimal("0"))
++    for pnl in long_pnls:
++        metrics.record(fill, pnl, Side.BUY)
++    for pnl in short_pnls:
++        metrics.record(fill, pnl, Side.SELL)
+     return build_report(
+         spec=make_spec(),
+         zones_used=(Zone.FIT,),
+         costs=CostModel(),
+         trials=1,
+         intrabar=IntrabarOrder.PESSIMISTIC,
+         metrics=metrics,
+     )
+ 
+ 
++def test_report_publishes_sides_separately() -> None:
++    r = make_report_with_metrics(
++        long_pnls=(Decimal("-20"), Decimal("-20")), short_pnls=(Decimal("100"),)
++    )
++    text = r.to_text()
++    assert "long_trades: 2" in text and "long_net_pnl: -40" in text
++    assert "short_trades: 1" in text and "short_net_pnl: 100" in text
++    assert "long_profit_factor: 0" in text        # убытки есть, прибыли нет
++    assert "short_profit_factor: null" in text    # убыточных сделок у стороны нет
++
++
++def test_json_keys_include_sides_after_sharpe() -> None:
++    payload = json.loads(make_report_with_metrics().to_json())
++    assert list(payload)[-6:] == [
++        "long_trades", "long_net_pnl", "long_profit_factor",
++        "short_trades", "short_net_pnl", "short_profit_factor",
++    ]
++
++
+ def test_to_text_includes_the_ratio_metrics_with_the_json_values() -> None:
+     report = make_report_with_metrics(trades=2, wins=1, losses=1)
+     lines = report.to_text().splitlines()
+-    assert lines[-3:] == ["profit_factor: 1", "win_rate: 0.5", "sharpe: 0"]
++    assert lines[-9:] == [
++        "profit_factor: 1",
++        "win_rate: 0.5",
++        "sharpe: 0",
++        "long_trades: 0",
++        "long_net_pnl: 0",
++        "long_profit_factor: null",
++        "short_trades: 0",
++        "short_net_pnl: 0",
++        "short_profit_factor: null",
++    ]
+ 
+ 
+ def test_profit_factor_serialises_as_null() -> None:
+     wins_only = make_report_with_metrics(trades=3, wins=3)
+     payload = json.loads(wins_only.to_json())
+     assert payload["profit_factor"] is None
+     assert '"profit_factor": null' in wins_only.to_json()
+ 
+     with_losses = make_report_with_metrics(trades=2, wins=1, losses=1)
+     payload = json.loads(with_losses.to_json())
+@@ -226,12 +272,18 @@ def test_json_key_order_is_fixed() -> None:
+         "intrabar",
+         "trades",
+         "wins",
+         "losses",
+         "net_pnl",
+         "equity",
+         "max_drawdown",
+         "profit_factor",
+         "win_rate",
+         "sharpe",
++        "long_trades",
++        "long_net_pnl",
++        "long_profit_factor",
++        "short_trades",
++        "short_net_pnl",
++        "short_profit_factor",
+     ]
+     assert list(payload["costs"]) == ["taker_fee", "maker_fee", "slippage", "leverage"]

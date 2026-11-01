@@ -1,0 +1,356 @@
+# Review package: 828380d..5086523
+
+## Commits
+5086523 feat: long breakout entry with atr stop bracket
+
+## Files changed
+ strategylab/strategy/two_sided_momentum.py | 94 ++++++++++++++++++++++++++---
+ tests/test_strategy_two_sided_momentum.py  | 95 ++++++++++++++++++++++++++++--
+ 2 files changed, 177 insertions(+), 12 deletions(-)
+
+## Diff
+diff --git a/strategylab/strategy/two_sided_momentum.py b/strategylab/strategy/two_sided_momentum.py
+index a094570..8e9936c 100644
+--- a/strategylab/strategy/two_sided_momentum.py
++++ b/strategylab/strategy/two_sided_momentum.py
+@@ -7,31 +7,37 @@
+ где HH/LL считаются по предшествующему окну — без сигнального бара B. Фильтр
+ уклона — `bias_len`-сглаживание Уайлдера по Close 15m, `bias_len = 0` фильтр
+ выключает. Дистанция стопа — `atr_mult` × ATR(14), ATR Уайлдера заморожен на
+ баре-сигнале, поэтому ATR и bias считаются включая B.
+ 
+ Поток данных тот же, что у остальных стратегий: стратегия получает 1m-бары и
+ сама агрегирует 15m через `Aggregator` с якорем по эпохе; неполная группа в
+ расчёт не попадает. `atr_len = 14` и `risk_frac = 0.01` — константы модуля,
+ свободных параметров ровно три (Global Constraint 10).
+ 
+-Каркас: параметры, агрегация и состояние 15m-окна. Входы, выходы и ордера
+-надстраиваются следующими задачами плана — пока `on_bar` не выдаёт ордеров.
++Реализовано (задача 7): лонг-вход и стоп-брекет. На закрытии 15m-бара B, когда
++окно готово, позиция плоская и исполнение не ожидается, `Close(B) > hh` (и,
++если фильтр уклона включён, `Close(B) > bias`) порождает MARKET-заявку с
++размером `equity · risk_frac / (atr_mult · ATR)`; ATR морозится на баре
++сигнала. На баре исполнения входа вешается reduce_only STOP_MARKET по
++`close − atr_mult · ATR_замороженный`. Фиксированной цели в спеке нет — LIMIT
++не выдаётся никогда. Шорт (задача 8), реверс (9) и трейлинг (10) надстраиваются
++следующими задачами плана.
+ """
+ 
+ from __future__ import annotations
+ 
+ from collections import deque
+ from collections.abc import Mapping
+ from decimal import Decimal
+ 
+-from strategylab.broker.orders import Order
++from strategylab.broker.orders import Order, OrderKind, Side
+ from strategylab.core.bars import Bar
+ from strategylab.strategy.base import StrategyState
+ from strategylab.strategy.indicators import (
+     FIFTEEN_MIN_COUNT,
+     FIFTEEN_MIN_WIDTH,
+     Aggregator,
+     Atr,
+     Rma,
+     positive,
+     positive_int,
+@@ -42,21 +48,27 @@ _ZERO = Decimal("0")
+ # Замороженные спекой величины: не параметры, константы (Global Constraint 10).
+ _ATR_LEN = 14
+ _RISK_FRAC = Decimal("0.01")
+ 
+ 
+ class TwoSidedMomentumStrategy:
+     """Пробой Дончиана в обе стороны на закрытии 15m-бара, выход — ATR-стоп.
+ 
+     Состояние 15m-окна открыто наружу через `_hh`, `_ll`, `_atr_value` и
+     `_bias_value` (Decimal | None; None — окно ещё не полно): тесты читают их
+-    напрямую, как `_lower`/`_adx` у FlatKeltnerStrategy.
++    напрямую, как `_lower`/`_adx` у FlatKeltnerStrategy. Исключение —
++    `_bias_value`: при `bias_len == 0` фильтр уклона выключен, и значение
++    остаётся `None` НАВСЕГДА ПО ЗАМЫСЛУ, а не как «не готов». Поэтому
++    выключенность фильтра проверяется по `self.bias_len == 0` /
++    `self._bias is None` (выключен — условия на bias нет), и только при
++    включённом фильтре `None` в `_bias_value` означает «ещё не готово»
++    (решение R9).
+     """
+ 
+     name = "two_sided_momentum"
+ 
+     PARAM_NAMES = ("donch_len", "atr_mult", "bias_len")
+ 
+     def __init__(
+         self,
+         donch_len: Decimal = Decimal("48"),
+         atr_mult: Decimal = Decimal("1.5"),
+@@ -77,45 +89,111 @@ class TwoSidedMomentumStrategy:
+ 
+         self._m15 = Aggregator(FIFTEEN_MIN_WIDTH, FIFTEEN_MIN_COUNT)
+         self._atr = Atr(_ATR_LEN)
+         self._window: deque[tuple[Decimal, Decimal]] = deque(maxlen=self._donch_len)
+ 
+         self._closed_15m = 0
+         self._hh: Decimal | None = None
+         self._ll: Decimal | None = None
+         self._atr_value: Decimal | None = None
+         self._bias_value: Decimal | None = None
++        # Сигнал дан, ждём исполнения: сторона входа и ATR, замороженный на баре
++        # сигнала. Именованы так намеренно — задачи 8–10 их расширяют.
++        self._pending_entry: Side | None = None
++        self._pending_atr: Decimal | None = None
+ 
+     @classmethod
+     def from_params(cls, params: Mapping[str, Decimal]) -> TwoSidedMomentumStrategy:
+         """Стратегия из реестра: известные параметры — свои значения, неизвестные — ошибка."""
+         unknown = sorted(set(params) - set(cls.PARAM_NAMES))
+         if unknown:
+             raise ValueError(f"неизвестные параметры two_sided_momentum: {unknown}")
+         kwargs = {name: params[name] for name in cls.PARAM_NAMES if name in params}
+         return cls(**kwargs)
+ 
+     @property
+     def bias_len(self) -> int:
+         """Параметр `bias_len` целым числом: 0 — фильтр уклона выключен."""
+         return self._bias_len
+ 
+     def on_bar(self, bar: Bar, state: StrategyState) -> list[Order]:
+-        """Один 1m-бар: обновить агрегаты 15m. Ордеров пока нет — это следующие задачи.
++        """Один 1m-бар: обновить агрегаты 15m, искать лонг-вход, вешать брекет.
+ 
+-        `state` ещё не прочитан: ограничение «не в позиции» появится вместе с
+-        первым входом.
++        Порядок как в FlatKeltnerStrategy.on_bar: сначала закрытие 15m-бара и
++        поиск сигнала входа (ограничен `state.position == 0` и отсутствием
++        ожидающего исполнения), затем — проверка, что выданный MARKET уже
++        исполнен: если позиция открыта и вход ожидается, на этом баре вешается
++        стоп-брекет и ожидающее состояние снимается.
+         """
++        orders: list[Order] = []
+         bar15 = self._m15.update(bar)
+         if bar15 is not None:
+             self._update_15m(bar15)
+-        return []
++            entry = self._entry_order(bar15, state)
++            if entry is not None:
++                orders.append(entry)
++        if self._pending_entry is Side.BUY and state.position > 0:
++            # Вход исполнен на этом баре: цена входа оценивается его закрытием.
++            self._pending_entry = None
++            atr_pending = self._pending_atr
++            self._pending_atr = None
++            if atr_pending is not None:
++                orders.extend(self._bracket_orders(bar, state, atr_pending))
++        return orders
++
++    def _entry_order(self, bar15: Bar, state: StrategyState) -> Order | None:
++        """LONG-вход: Close(B) выше хаёва Дончиана — MARKET-ордер с размером по риску.
++
++        Готовность окна — по `_hh`/`_atr_value` (после границы warmup);
++        `_bias_value` в этой проверке НЕ участвует: при выключенном фильтре
++        (`bias_len == 0`) он `None` по замыслу, а не как «не готово»
++        (решение R9). Фильтр уклона добавляет условие Close(B) > bias только
++        когда включён (`self._bias is not None`), и тогда уже его `None`
++        честно означает «bias ещё не посчитан».
++
++        Размер `qty = equity · _RISK_FRAC / (atr_mult · atr)`: риск на сделку
++        — _RISK_FRAC капитала, дистанция до стопа — atr_mult · ATR, ATR
++        замораживается на сигнальном баре в `_pending_atr`. Вход запрещён,
++        пока позиция не плоская или прошлое исполнение ещё ожидается:
++        не более одного сигнала на позицию.
++        """
++        hh = self._hh
++        atr = self._atr_value
++        if hh is None or atr is None or atr <= 0:
++            return None
++        if state.position != 0 or self._pending_entry is not None:
++            return None
++        if bar15.close <= hh:
++            return None
++        if self._bias is not None:
++            bias = self._bias_value
++            if bias is None or bar15.close <= bias:
++                return None
++        if state.equity <= 0:
++            return None
++        qty = state.equity * _RISK_FRAC / (self._atr_mult * atr)
++        self._pending_entry = Side.BUY
++        self._pending_atr = atr
++        return Order(Side.BUY, OrderKind.MARKET, qty, None, None, False)
++
++    def _bracket_orders(self, bar: Bar, state: StrategyState, entry_atr: Decimal) -> list[Order]:
++        """Стоп-брекет на баре исполнения входа: единственный выход, без цели.
++
++        Цена входа оценивается как close бара, на котором MARKET исполнен:
++        движок не отдаёт стратегии цену исполнения (решение 4 Flat-Кельтнера —
++        ошибка оценки равна одному проскальзыванию). Дистанция стопа — та же,
++        что закладывалась в размер: `atr_mult · entry_atr`, с ATR, замороженным
++        на сигнальном баре. LIMIT-ордера нет: фиксированной цели в спеке нет.
++        """
++        entry = bar.close
++        stop = entry - self._atr_mult * entry_atr
++        return [Order(Side.SELL, OrderKind.STOP_MARKET, state.position, None, stop, True)]
+ 
+     def _update_15m(self, bar15: Bar) -> None:
+         """Закрытый 15m-бар B: ATR и bias включая B, Дончиан по окну без B.
+ 
+         Порядок фиксации спеки: hh/ll считаются по содержимому окна ДО
+         добавления B (последние `donch_len` завершённых баров перед сигналом),
+         ATR и bias — включая B: сигнальный бар и есть бар B, а стоп
+         замораживается на нём.
+ 
+         Состояние наружу — только после границы warmup: должно пройти
+diff --git a/tests/test_strategy_two_sided_momentum.py b/tests/test_strategy_two_sided_momentum.py
+index 7331115..7a2e383 100644
+--- a/tests/test_strategy_two_sided_momentum.py
++++ b/tests/test_strategy_two_sided_momentum.py
+@@ -1,27 +1,28 @@
+ """Тесты стратегии ДВУСТОРОННИЙ ИМПУЛЬС (two_sided_momentum): синтетические 1m-бары.
+ 
+ Бары строятся так, чтобы пробой читался геометрией ленты, а не настройкой:
+ `_bars` — плато без единого выхода цены за границы (ATR = 0.5),
+ `_rising_1m_bars` — монотонный рост, где каждый close выше всех предыдущих
+-хаёв. Ордеров на каркасной задаче стратегия не выдаёт вовсе, поэтому тесты
+-смотрят на состояние (`_hh`, `_ll`, `_atr_value`) — приватные атрибуты
+-стратегии в тестах, как `_lower`/`_adx` у flat_keltner.
++хаёв, `_bars_then_breakout` — плато, чей close растёт, не задевая границы
++Дончиана, и завершается одним баром пробоя. Тесты каркаса смотрят на состояние (`_hh`,
++`_ll`, `_atr_value`) — приватные атрибуты стратегии в тестах, как
++`_lower`/`_adx` у flat_keltner; тесты входа/брекета смотрят на ордера.
+ """
+ 
+ from __future__ import annotations
+ 
+ from decimal import Decimal
+ 
+ import pytest
+ 
+-from strategylab.broker.orders import Order
++from strategylab.broker.orders import Order, OrderKind, Side
+ from strategylab.core.bars import Bar
+ from strategylab.strategy.base import StrategyState
+ from strategylab.strategy.two_sided_momentum import TwoSidedMomentumStrategy
+ 
+ START = 1_717_200_000  # 2024-06-01T00:00:00Z: граница часа, 15m и 5H
+ ONE = Decimal("1")
+ EQUITY = Decimal("10000")
+ FLAT_PRICE = Decimal("100")
+ FLAT_HALF = Decimal("0.25")  # плато: high 100.25, low 99.75 — true range 0.5, ATR 0.5
+ RISE_STEP = Decimal("0.01")
+@@ -53,20 +54,71 @@ def _rising_1m_bars(count: int, first: int = 0, base: Decimal = FLAT_PRICE) -> l
+             open=base + RISE_STEP * i,
+             high=base + RISE_STEP * (i + 1),
+             low=base + RISE_STEP * i,
+             close=base + RISE_STEP * (i + 1),
+             volume=ONE,
+         )
+         for i in range(count)
+     ]
+ 
+ 
++def _bars_then_breakout() -> list[Bar]:
++    """Плато из 17 закрытых 15m-баров, пробой вверх на закрытом баре №18.
++
++    Плато: high=100.25, low=99.75 — истинный диапазон каждого бара ровно
++    Decimal("0.5"), поэтому ATR Уайлдера сходится к 0.5 с 14-го закрытого
++    бара и на баре сигнала равен ровно 0.5. Close плато растёт на 0.01 за бар
++    (выше предыдущего close), но до 100.25 не доходит — двухбарный хаёв
++    Дончиана (donch_len=2, max предыдущих high) не пробивается. Финальный бар:
++    close=high=100.5, low=100 — строго выше hh=100.25, диапазон по-прежнему
++    0.5 (гэпа нет: 100.5 − 100.16 = 0.34 < 0.5). Закрытых 15m-баров 18; граница
++    warmup для donch_len=2 — бар №15 (max(2, 14) + 1), пробой значительно после
++    неё.
++    """
++    bars: list[Bar] = []
++    for index in range(17):
++        bars.extend(_bars(14, first=len(bars)))
++        bars.append(
++            Bar(
++                ts=START + 60 * len(bars),
++                open=FLAT_PRICE,
++                high=FLAT_PRICE + FLAT_HALF,
++                low=FLAT_PRICE - FLAT_HALF,
++                close=FLAT_PRICE + RISE_STEP * index,
++                volume=ONE,
++            )
++        )
++    step = Decimal("0.5")
++    for _ in range(14):
++        bars.append(
++            Bar(
++                ts=START + 60 * len(bars),
++                open=FLAT_PRICE,
++                high=FLAT_PRICE,
++                low=FLAT_PRICE,
++                close=FLAT_PRICE,
++                volume=ONE,
++            )
++        )
++    bars.append(
++        Bar(
++            ts=START + 60 * len(bars),
++            open=FLAT_PRICE,
++            high=FLAT_PRICE + step,
++            low=FLAT_PRICE,
++            close=FLAT_PRICE + step,
++            volume=ONE,
++        )
++    )
++    return bars
++
++
+ def _flat_state(bar_index: int = 0) -> StrategyState:
+     """Плоское состояние: позиции нет, капитал есть (для размерных расчётов)."""
+     return StrategyState(position=Decimal("0"), equity=EQUITY, bar_index=bar_index)
+ 
+ 
+ def _orders(
+     strategy: TwoSidedMomentumStrategy, bar: Bar, state: StrategyState
+ ) -> list[Order]:
+     """Один бар через on_bar: список ордеров, который он породил."""
+     return strategy.on_bar(bar, state)
+@@ -107,10 +159,45 @@ def test_from_params_rejects_unknown() -> None:
+ 
+ def test_warmup_exposes_channel_only_when_both_windows_are_full() -> None:
+     s = TwoSidedMomentumStrategy(donch_len=Decimal("3"), bias_len=Decimal("0"))
+     bars = _rising_1m_bars(count=15 * 15)  # монотонно растущие 1m-бары: 15 завершённых 15m
+     for bar in bars[: 14 * 15]:
+         s.on_bar(bar, _flat_state())
+     assert s._hh is None and s._ll is None and s._atr_value is None  # на баре 13 окно ещё неполно
+     for bar in bars[14 * 15 :]:
+         s.on_bar(bar, _flat_state())
+     assert s._hh is not None and s._atr_value is not None  # на баре 15 полны оба окна
++
++
++# Лонг-вход и стоп-брекет (задача 7)
++
++
++def test_breakout_above_donchian_opens_long_market_order() -> None:
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakout()
++    orders = _run_strategy(s, bars)
++    assert orders[-1] == [Order(Side.BUY, OrderKind.MARKET, Decimal("100"), None, None, False)]
++
++
++def test_stop_bracket_is_placed_on_the_fill_bar() -> None:
++    # вход исполнен на баре с close=100, ATR frozen=0.5, atr_mult=2 → stop=99
++    s = TwoSidedMomentumStrategy(
++        donch_len=Decimal("2"), atr_mult=Decimal("2"), bias_len=Decimal("0")
++    )
++    bars = _bars_then_breakout()
++    orders = _run_strategy(s, bars)  # прогон плоским состоянием до сигнала включительно
++    assert orders[-1] == [Order(Side.BUY, OrderKind.MARKET, Decimal("100"), None, None, False)]
++    # Движок исполнил MARKET: следующий 1m-бар приходит с позицией 100, close=100.
++    fill_bar = _bars(1, first=len(bars))[0]
++    filled = StrategyState(position=Decimal("100"), equity=EQUITY, bar_index=len(bars))
++    bracket = _orders(s, fill_bar, filled)
++    assert bracket == [
++        Order(Side.SELL, OrderKind.STOP_MARKET, Decimal("100"), None, Decimal("99"), True)
++    ]
++    #Pending израсходован: на следующем баре брекет не дублируется и вход не повторяется.
++    repeat = _orders(s, _bars(1, first=len(bars) + 1)[0], filled)
++    assert repeat == []
++    # Никакого LIMIT-ордера стратегия не выдаёт вовсе: фиксированной цели в спеке нет.
++    emitted = [order for group in orders + [bracket, repeat] for order in group]
++    assert all(order.kind is not OrderKind.LIMIT for order in emitted)
