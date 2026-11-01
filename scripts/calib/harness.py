@@ -314,6 +314,12 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     parser.add_argument("--capital", type=_SWEEP._parse_capital, default=DEFAULT_CAPITAL)
     parser.add_argument(
+        "--leverage",
+        type=Decimal,
+        default=Decimal("1"),
+        help="плечо CostModel (маржа гейта и ликвидация); раунд 4: кибор к3 = 10",
+    )
+    parser.add_argument(
         "--interval", choices=sorted(_INTERVALS), default="hour", help="интервал бара"
     )
     parser.add_argument(
@@ -331,7 +337,13 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def _run_grid(args: argparse.Namespace) -> None:
-    costs = _DOUBLE_COSTS if args.double_costs else CostModel()
+    if args.double_costs:
+        # удвоенные тарифы серии, leverage — из флага (дефолт 1: старые прогоны побайтовы)
+        costs = CostModel(
+            _DOUBLE_COSTS.taker_fee, _DOUBLE_COSTS.maker_fee, _DOUBLE_COSTS.slippage, args.leverage
+        )
+    else:
+        costs = CostModel(leverage=args.leverage)
     interval = _INTERVALS[args.interval]
     strategy_class = STRATEGY_CLASSES[args.strategy]
     defaults: dict[str, Decimal] = _SWEEP._defaults(strategy_class)
