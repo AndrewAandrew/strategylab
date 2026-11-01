@@ -83,7 +83,15 @@ def header_lines(spec_version: str) -> list[str]:
 def test_run_prints_both_reports_and_verdict(tmp_path: Path, capsys) -> None:
     db = tmp_path / "bars.db"
     make_db(db)
-    main(["run", str(db), SYMBOL, "MINUTE", str(START_TS), str(END_TS), "buy_hold"])
+    # Капитал 100 000 покрывает entry-notional 1 BTC (~67 645): без него гейт
+    # подачи (фикс B/E) отклонил бы oversized-заявку. net_pnl и max_drawdown от
+    # капитала не зависят; equity = капитал + net_pnl.
+    main(
+        [
+            "run", str(db), SYMBOL, "MINUTE", str(START_TS), str(END_TS), "buy_hold",
+            "--capital", "100000",
+        ]
+    )
     out = capsys.readouterr().out
     spec = make_spec()
     # buy_hold: вход рынком на втором баре (67663.2 + slippage), сведение на закрытии
@@ -96,7 +104,7 @@ def test_run_prints_both_reports_and_verdict(tmp_path: Path, capsys) -> None:
             "wins: 0",
             "losses: 1",
             "net_pnl: -127.083013460",
-            "equity: 9872.916986540",
+            "equity: 99872.916986540",
             "max_drawdown: 127.083013460",
             "profit_factor: 0",
             "win_rate: 0",
@@ -109,7 +117,7 @@ def test_run_prints_both_reports_and_verdict(tmp_path: Path, capsys) -> None:
             "wins: 0",
             "losses: 1",
             "net_pnl: -127.083013460",
-            "equity: 9872.916986540",
+            "equity: 99872.916986540",
             "max_drawdown: 127.083013460",
             "profit_factor: 0",
             "win_rate: 0",

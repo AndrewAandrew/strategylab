@@ -27,6 +27,9 @@ from strategylab.strategy.base import StrategyState
 
 COSTS = CostModel()
 SLIPPAGE = COSTS.slippage
+# Капитал выше notional синтетических баров (цены здесь — ts, ≈1.7e9):
+# гейт подачи (фикс B/E) отклонил бы заявки при нулевом equity.
+EQUITY = Decimal("10000000000")
 
 SYMBOL = "BTCUSDT"
 START = 1717200000  # 2024-06-01T00:00:00Z, граница часа
@@ -79,7 +82,7 @@ def _mark_out() -> dict[int, list[Order]]:
 
 def _run(script: dict[int, list[Order]], trade_log: TradeLog | None) -> Metrics:
     """Прогон одного сценария: вход на баре 0, выход на баре 2."""
-    metrics = Metrics()
+    metrics = Metrics(equity=EQUITY)
     Engine().run(
         ListFeed(_bars(5)),
         ScriptedStrategy(script),
@@ -197,7 +200,7 @@ def _spec() -> StrategySpec:
 
 def test_fork_reports_no_trades_without_recording() -> None:
     """Без записи отчёт пуст по сделкам — и по-прежнему полный по метрикам."""
-    fork = run_fork(_store(), _spec(), lambda: ScriptedStrategy(_mark_out()), COSTS)
+    fork = run_fork(_store(), _spec(), lambda: ScriptedStrategy(_mark_out()), COSTS, EQUITY)
 
     assert fork.pessimistic.trades == ()
     assert fork.optimistic.trades == ()
@@ -207,9 +210,9 @@ def test_fork_reports_no_trades_without_recording() -> None:
 def test_fork_with_recording_reports_trades_per_branch() -> None:
     """С записью отчёт каждой ветки несёт её сделки, метрики же без сдвига."""
     spec = _spec()
-    fork = run_fork(_store(), spec, lambda: ScriptedStrategy(_mark_out()), COSTS)
+    fork = run_fork(_store(), spec, lambda: ScriptedStrategy(_mark_out()), COSTS, EQUITY)
     recorded = run_fork(
-        _store(), spec, lambda: ScriptedStrategy(_mark_out()), COSTS, record_trades=True
+        _store(), spec, lambda: ScriptedStrategy(_mark_out()), COSTS, EQUITY, record_trades=True
     )
 
     for plain, with_trades in (

@@ -26,6 +26,9 @@ COSTS = CostModel()
 DEPTH = Decimal("0.01")  # лимит от close 100 → ровно 99
 LIMIT_PRICE = Decimal("99")
 ONE = Decimal("1")
+# Капитал метрик для движковых прогонов: гейт подачи (фикс B/E) не пропускает
+# entry-лимитки при нулевом equity. Совпадает с equity в `_state` ниже.
+CAPITAL = Decimal("10000")
 
 
 def _bar(ts: int, close: str = "100", low: str | None = None) -> Bar:
@@ -109,7 +112,7 @@ def _run(
     bars: list[Bar], strategy: Strategy
 ) -> tuple[FillRecordingBroker, Metrics]:
     broker = FillRecordingBroker(COSTS, IntrabarOrder.PESSIMISTIC)
-    metrics = Metrics()
+    metrics = Metrics(equity=CAPITAL)
     Engine().run(ListFeed(bars), strategy, broker, metrics)
     return broker, metrics
 
@@ -119,7 +122,7 @@ def _run_recording(
 ) -> tuple[FillRecordingBroker, RecordingStrategy]:
     broker = FillRecordingBroker(COSTS, IntrabarOrder.PESSIMISTIC)
     recorder = RecordingStrategy(strategy, broker)
-    Engine().run(ListFeed(bars), recorder, broker, Metrics())
+    Engine().run(ListFeed(bars), recorder, broker, Metrics(equity=CAPITAL))
     return broker, recorder
 
 
