@@ -9,6 +9,7 @@ from strategylab.core.bars import Bar
 from strategylab.strategy.base import Strategy, StrategyState
 from strategylab.strategy.dca_grid import DcaGridStrategy
 from strategylab.strategy.flat_keltner import FlatKeltnerStrategy
+from strategylab.strategy.jaguar_ema import JaguarEmaStrategy
 from strategylab.strategy.limit_pullback import LimitPullbackStrategy
 from strategylab.strategy.sweep_liquidity import SweepLiquidityStrategy
 from strategylab.strategy.trend_pullback import TrendPullbackStrategy
@@ -84,6 +85,7 @@ STRATEGY_CLASSES: dict[str, type[Strategy]] = {
     "sweep_liquidity": SweepLiquidityStrategy,
     "limit_pullback": LimitPullbackStrategy,
     "dca_grid": DcaGridStrategy,
+    "jaguar_ema": JaguarEmaStrategy,
 }
 
 
@@ -103,6 +105,8 @@ def build(name: str, params: Mapping[str, Decimal]) -> Strategy:
         return LimitPullbackStrategy.from_params(params)
     if name == "dca_grid":
         return DcaGridStrategy.from_params(params)
+    if name == "jaguar_ema":
+        return JaguarEmaStrategy.from_params(params)
     raise UnknownStrategy(name)
 
 

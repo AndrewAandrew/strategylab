@@ -622,3 +622,63 @@ def test_cli_reduce_only_pending_split(
     journal = (out / f"{stem}_journal_p.csv").read_text(encoding="utf-8").splitlines()
     assert len(journal) == 2
     assert journal[1].endswith(",market")  # закрыто сводкой окна
+
+
+def test_cli_leverage_flag_prints_costs_line(
+    harness: ModuleType, tmp_db_two_bars: Path, tmp_path: Path
+) -> None:
+    """--leverage 10 (раунд 4, кибор к3): плечо в шапке csv и в report_p.txt.
+
+    Имена артефактов не меняются: прогон с флагом отличается от дефолтного
+    только печатью плеча, а не суффиксом — байтовая совместимость старых
+    прогонов дороже.
+    """
+    end_ts = START_TS + 60 * 2
+    out = tmp_path / "lev"
+    harness.main(
+        [
+            str(tmp_db_two_bars), SYMBOL, str(START_TS), str(end_ts), "buy_hold",
+            "--interval", "1m", "--leverage", "10",
+            # капитал ≥ notional (1 BTC по ~100 000) и при leverage=1, и при 10
+            "--capital", "200000", "--out", str(out),
+        ]
+    )
+    stem = f"buy_hold_{SYMBOL}_{START_TS}_{end_ts}"
+    assert sorted(p.name for p in out.iterdir()) == sorted(
+        f"{stem}{suffix}"
+        for suffix in (".csv", "_journal_p.csv", "_journal_o.csv", "_report_p.txt")
+    )
+    csv_text = (out / f"{stem}.csv").read_text(encoding="utf-8")
+    assert "costs: taker_fee=0.0006 maker_fee=0.0002 slippage=0.0005 leverage=10" in csv_text
+    report = (out / f"{stem}_report_p.txt").read_text(encoding="utf-8")
+    assert "leverage=10" in report
+
+
+def test_cli_leverage_default_and_double_costs_combo(
+    harness: ModuleType, tmp_db_two_bars: Path, tmp_path: Path
+) -> None:
+    """Дефолт --leverage 1 — старые прогоны побайтовы; с --double-costs флаг
+    меняет только плечо: удвоенные тарифы серии остаются удвоенными."""
+    end_ts = START_TS + 60 * 2
+    out = tmp_path / "levdef"
+    harness.main(
+        [
+            str(tmp_db_two_bars), SYMBOL, str(START_TS), str(end_ts), "buy_hold",
+            "--interval", "1m", "--capital", "200000", "--out", str(out),
+        ]
+    )
+    stem = f"buy_hold_{SYMBOL}_{START_TS}_{end_ts}"
+    csv1 = (out / f"{stem}.csv").read_text(encoding="utf-8")
+    assert "costs: taker_fee=0.0006 maker_fee=0.0002 slippage=0.0005 leverage=1" in csv1
+
+    out2 = tmp_path / "levdc"
+    harness.main(
+        [
+            str(tmp_db_two_bars), SYMBOL, str(START_TS), str(end_ts), "buy_hold",
+            "--interval", "1m", "--double-costs", "--leverage", "10",
+            "--capital", "200000", "--out", str(out2),
+        ]
+    )
+    stem2 = f"buy_hold_{SYMBOL}_{START_TS}_{end_ts}_dc"
+    csv2 = (out2 / f"{stem2}.csv").read_text(encoding="utf-8")
+    assert "costs: taker_fee=0.0012 maker_fee=0.0004 slippage=0.0010 leverage=10" in csv2
