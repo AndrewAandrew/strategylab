@@ -24,6 +24,7 @@ maker, без проскальзывания), runner-выход = close 110.2·
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Iterator
 from decimal import Decimal
 
@@ -31,7 +32,7 @@ import pytest
 
 from strategylab.broker.costs import CostModel, IntrabarOrder
 from strategylab.broker.orders import Fill, Order, OrderKind, Side
-from strategylab.broker.sim import BrokerSimulator
+from strategylab.broker.sim import BrokerSimulator, MarginError
 from strategylab.core.bars import Bar, Interval
 from strategylab.core.engine import Engine
 from strategylab.core.metrics import Metrics
@@ -547,3 +548,148 @@ def test_registry_params_and_validation() -> None:
         with pytest.raises(ValueError):
             SmcChochFvgStrategy(tp_mult=bad_tp)
     assert SmcChochFvgStrategy().bull_fvg is None
+
+
+# --- Fundability-skip (раунд 5, §1, решение 10) ------------------------------
+
+# Tight→wide лента: FVG(17) шириной 0.0536 (mid 107.0001, SL 106.9465) и
+# close(19) = 108.5 дают rho = 0.0536/108.5 = 0.000494 — tight; пара (24,24)
+# с S=26: mid 109.25, R = 109.25 - 95*0.9995 = 14.2975, rho = 14.2975/111 — wide.
+# Диагностический floor 0.0015 (киб к5 S-wide, §6) отсекает первую пару.
+_TIGHT_THEN_WIDE = _LONG_SPEC[:15] + [
+    ("107", "107", "107"),  # 15
+    ("107.2", "107", "107.2"),  # 16
+    ("112", "107.0002", "111"),  # 17: CHoCH (111 > peak 108) + узкий FVG 0.0002
+    ("108", "107", "108"),  # 18
+    ("110", "107.6", "108.5"),  # 19: S: rho 0.000494 — под floor
+    ("101", "90", "97"),  # 20
+    ("108", "93", "101"),  # 21
+    ("109", "95", "105"),  # 22
+    ("110", "96", "108"),  # 23
+    ("114", "109.5", "113"),  # 24: CHoCH + широкий FVG (mid 109.25, R 14.2975)
+    ("112", "105", "110"),  # 25
+    ("113", "104", "111"),  # 26: S: rho 0.1288 — торгуется
+]
+# к5-4: замороженный дефолт = r/lev (0.005/20).
+FUND_FLOOR = Decimal("0.00025")
+TIGHT_MID = Decimal("107.0001")
+
+
+def _latched_smc(fund_floor: str, fvg: Fvg) -> SmcChochFvgStrategy:
+    """Машина с руками заведённой парой (бары CHoCH+FVG = 10, сигнал на 12)."""
+    strategy = SmcChochFvgStrategy(fund_floor=Decimal(fund_floor))
+    strategy._bull_choch_bar = 10
+    strategy._bull_fvg = fvg
+    return strategy
+
+
+def test_fund_floor_skips_tight_pair_and_next_pair_trades() -> None:
+    """rho(19) < floor: ни одной заявки, состояние как будто сигнала не было (§1).
+
+    Машинка перезаряжена: wide-пара сигналит ровно на S=26. Ниже rho tight-пары
+    тот же сигнал торговался бы (единичный контроль юнит-слоем: lev харнесса
+    10 на таком rho сам упёрся бы в MarginError — ровно то, от чего floor=r/lev).
+    """
+    _, broker, observer = _run(
+        _TIGHT_THEN_WIDE, SmcChochFvgStrategy(fund_floor=Decimal("0.0015"))
+    )
+    assert observer.orders[19] == []
+    assert observer.in_trade[19] is False
+    assert broker.log == []
+    assert [index for index, orders in observer.orders.items() if orders] == [26]
+    entry = observer.orders[26][0]
+    assert entry.side is Side.BUY and entry.kind is OrderKind.LIMIT
+    assert entry.limit_price == Decimal("109.25")
+    assert entry.qty == CAP * Decimal("0.01") / Decimal("14.2975")
+
+    loose = _feed_flat(
+        SmcChochFvgStrategy(fund_floor=Decimal("0.0004")),
+        _bars(_TIGHT_THEN_WIDE[:20]),
+    )
+    assert len(loose[19]) == 1  # 0.0004 < rho 0.000494 — вход есть
+    assert loose[19][0].limit_price == TIGHT_MID
+
+
+def test_fund_floor_at_r_over_leverage_excludes_margin_crash() -> None:
+    """floor = risk_frac/lev ⇒ каждый торгуемый entry проходим по марже (§1, §3).
+
+    lev 20, tight-пара (rho 0.000494): r 0.005 при дефолте 0.00025 = r/lev —
+    вход торгуется и исполняется без MarginError; r 0.02 при floor 0.00025 —
+    заявка не проходит гейт ядра (MarginError: required 2.02·equity); r 0.02
+    при floor 0.001 = r/lev — пара skipнута, прогон чист.
+    """
+    lev20 = CostModel(leverage=Decimal("20"))
+    tape = _TIGHT_THEN_WIDE[:21]
+
+    def run(strategy: SmcChochFvgStrategy) -> FillBroker:
+        broker = FillBroker(lev20, IntrabarOrder.PESSIMISTIC)
+        Engine().run(ListFeed(_bars(tape)), strategy, broker, Metrics(equity=CAP))
+        return broker
+
+    safe = run(SmcChochFvgStrategy(risk_frac=Decimal("0.005")))
+    assert [(index, fill.reason) for index, fill in safe.log] == [(20, "limit")]
+    assert safe.log[0][1].price == TIGHT_MID  # maker-исполнение по цене лимитки
+
+    with pytest.raises(MarginError):
+        run(SmcChochFvgStrategy(risk_frac=Decimal("0.02")))
+
+    skipped = run(SmcChochFvgStrategy(risk_frac=Decimal("0.02"), fund_floor=Decimal("0.001")))
+    assert skipped.log == []
+    assert skipped.position.qty == ZERO
+
+
+def test_fund_floor_registered_with_frozen_default() -> None:
+    """PARAM в реестре, дефолт 0.00025 (к5-4), строковый Decimal доезжает до поля."""
+    parameter = inspect.signature(SmcChochFvgStrategy.__init__).parameters["fund_floor"]
+    assert parameter.default == FUND_FLOOR
+    assert SmcChochFvgStrategy.PARAM_NAMES == (
+        "ttl_bars",
+        "risk_frac",
+        "tp_mult",
+        "max_hold",
+        "fund_floor",
+    )
+    assert isinstance(build("smc_choch_fvg", {"fund_floor": FUND_FLOOR}), SmcChochFvgStrategy)
+    passed = SmcChochFvgStrategy.from_params({"fund_floor": Decimal("0.001")})
+    assert passed._fund_floor == Decimal("0.001")
+    for bad in (ZERO, Decimal("-0.001")):
+        with pytest.raises(ValueError, match="fund_floor"):
+            SmcChochFvgStrategy(fund_floor=bad)
+
+
+def test_fund_floor_basis_is_submit_bar_close_not_fvg_mid() -> None:
+    """Знаменатель rho — close бара подачи S (та же цена у `_guard_submit`), не mid.
+
+    Замороженная пара R=0.1, mid=100: R/mid = 0.001 ровно floor, но подающий бар
+    с close 100.05 даёт rho = 0.1/100.05 < floor — skip. На mid-базе сигнал бы
+    торговался. Тот же бар с close 99.95: rho > floor — лимитка в mid.
+    """
+    fvg = Fvg(bar=10, mid=Decimal("100"), sl=Decimal("99.9"), risk=Decimal("0.1"))
+    state = StrategyState(ZERO, CAP, 12)
+    tight_bar = _bars([("100.05", "99.9", "100.05")])[0]
+    assert _latched_smc("0.001", fvg)._entry_order(tight_bar, state) is None
+    wide_bar = _bars([("99.95", "99.9", "99.95")])[0]
+    order = _latched_smc("0.001", fvg)._entry_order(wide_bar, state)
+    assert order is not None
+    assert order.side is Side.BUY and order.limit_price == Decimal("100")
+    assert order.qty == CAP * Decimal("0.01") / fvg.risk
+
+
+def test_fund_floor_equality_trades_and_pair_consumed_on_skip() -> None:
+    """rho == floor торгуется (строгое <, §11); skip — путь обычного отказа пары (§1).
+
+    R=0.115 при close 115: rho = 0.001 = floor — заявка есть. При close 115.01
+    rho чуть ниже — ни заявки, и пара израсходована (вторая попытка на том же
+    баре молчит), торговое состояние не тронуто.
+    """
+    fvg = Fvg(bar=10, mid=Decimal("100"), sl=Decimal("99.885"), risk=Decimal("0.115"))
+    state = StrategyState(ZERO, CAP, 12)
+    equal = _latched_smc("0.001", fvg)._entry_order(
+        _bars([("115", "99.885", "115")])[0], state
+    )
+    assert equal is not None  # 0.115/115 == 0.001 — равенство торгуется
+    skipper = _latched_smc("0.001", fvg)
+    below_bar = _bars([("115.01", "99.885", "115.01")])[0]
+    assert skipper._entry_order(below_bar, state) is None
+    assert skipper.bull_choch_bar is None and skipper.bull_fvg is None  # пара израсходована
+    assert skipper.in_trade is False  # состояние как будто сигнала не было

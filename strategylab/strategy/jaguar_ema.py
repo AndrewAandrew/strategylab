@@ -24,6 +24,18 @@ SL = EMA34(t) сигнального бара — замораживается (
 ``C(t)`` — значит, ниже закрытия (у шорта — зеркально). Гард оставлен как
 страховка ядра, не как живое правило.
 
+Fundability-skip (раунд 5, §1 — единственное новое правило): перед подачей
+входного MARKET считается ``rho = R / close(бара t)`` — то же отношение и та же
+цена, по которой гейт ``_guard_submit`` (engine.py:138) считает notional. Если
+``rho < fund_floor`` — сигнал пропускается целиком: ни одной заявки, состояние
+сделки не трогается (флэт остаётся флэтом), следующий сигнал обрабатывается как
+обычно. Сравнение строгое: ``rho == fund_floor`` торгуется (на линии гейт
+проходит по равенству — §11 пререгистрации). База — close сигнального (подающего)
+бара, не mid и не цена исполнения. Дефолт ``Decimal("0.00025")`` = r/lev при
+risk_frac 0.005 и leverage 20 (кибы к5-3, к5-4): входные заявки ровно проходимого
+множества проходят гейт математически, MARGIN_CRASH на входах исключён по
+построению (§3). Выходы, трейл, TP1 и механика ликвидации не затронуты.
+
 Сайзинг: ``qty = state.equity * risk_frac / R`` (решение 7 trend_pullback —
 капитал берётся из реализованного equity, у прогона без капитала сделки нет).
 Брекет — на баре исполнения входа (решение 6 там же: reduce_only нельзя
@@ -72,21 +84,25 @@ class JaguarEmaStrategy:
     reduce_only-брекет (SL по EMA34 сигнального бара, TP1 половиной позиции
     на 1.5R), после TP1 стоп трейлит EMA13, закрытие тренда — выход по
     close за EMA34. Зеркальные шорты включены всегда: это часть класса.
+    Сигналы с ``R / close(сигнального бара) < fund_floor`` пропускаются —
+    ни одной заявки (раунд 5, §1).
     """
 
     name = "jaguar_ema"
 
-    PARAM_NAMES = ("risk_frac", "tp_mult")
+    PARAM_NAMES = ("risk_frac", "tp_mult", "fund_floor")
 
     def __init__(
         self,
         risk_frac: Decimal = Decimal("0.01"),
         tp_mult: Decimal = Decimal("1.5"),
+        fund_floor: Decimal = Decimal("0.00025"),
     ) -> None:
         self._risk_frac = positive(risk_frac, "risk_frac")
         if self._risk_frac > _ONE:
             raise ValueError(f"risk_frac должен быть <= 1, получено {risk_frac}")
         self._tp_mult = positive(tp_mult, "tp_mult")
+        self._fund_floor = positive(fund_floor, "fund_floor")
 
         self._ema_fast = Ema(_EMA_FAST)
         self._ema_slow = Ema(_EMA_SLOW)
@@ -140,12 +156,18 @@ class JaguarEmaStrategy:
 
         SL и оценка замораживаются на сигнальном баре; ``R <= 0`` или
         нулевой капитал — входа нет (решения 5 и 7 trend_pullback).
+        Fundability-skip (§1 раунда 5): ``rho = R / close(бара t)`` ниже
+        ``fund_floor`` — сигнала как бы не было: ни одной заявки, состояние
+        не трогается, следующий сигнал обрабатывается обычно. Равенство
+        ``rho == fund_floor`` торгуется (строгое ``<``).
         """
         side = self._entry_signal(bar, fast)
         if side is None or state.equity <= 0:
             return []
         risk = bar.close - slow if side is Side.BUY else slow - bar.close
         if risk <= 0:
+            return []
+        if risk / bar.close < self._fund_floor:
             return []
         self._entry_pending = True
         self._stop = slow
