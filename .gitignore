@@ -8,4 +8,4 @@ __pycache__/
 *.db-shm
 *.db-wal
 data/
-.superpowers/
+strategylab.egg-info/
