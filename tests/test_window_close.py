@@ -112,7 +112,7 @@ def test_cancel_all_counter_starts_at_zero() -> None:
 def test_pending_limit_does_not_survive_window() -> None:
     bars = _miss_bars(4)
     broker = BrokerSimulator(COSTS, IntrabarOrder.PESSIMISTIC)
-    metrics = Metrics()
+    metrics = Metrics(equity=Decimal("10000"))
 
     Engine().run(ListFeed(bars), ScriptedStrategy({0: [_limit_buy("99")]}), broker, metrics)
 
@@ -165,7 +165,7 @@ def test_accounting_identity_submits_fills_expired_window_cancelled() -> None:
     """
     bars = [*_miss_bars(3), _bar(START + 3, "98")]
     broker = FillRecordingBroker(COSTS, IntrabarOrder.PESSIMISTIC)
-    metrics = Metrics()
+    metrics = Metrics(equity=Decimal("10000"))
     script = {0: [_limit_buy("99"), _limit_buy("99", ttl=1)], 3: [_limit_buy("1")]}
 
     Engine().run(ListFeed(bars), ScriptedStrategy(script), broker, metrics)
@@ -192,7 +192,7 @@ def test_mutation_without_cancel_all_pending_survives(
     bars = _miss_bars(4)
     order = _limit_buy("99")
     broker = BrokerSimulator(COSTS, IntrabarOrder.PESSIMISTIC)
-    metrics = Metrics()
+    metrics = Metrics(equity=Decimal("10000"))
 
     Engine().run(ListFeed(bars), ScriptedStrategy({0: [order]}), broker, metrics)
 
