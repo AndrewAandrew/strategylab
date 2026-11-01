@@ -35,6 +35,8 @@ FIVE_MIN = 300
 EQUITY = Decimal("10000")
 RISK_FRAC = Decimal("0.01")
 TP_MULT = Decimal("1.5")
+# к5-4: первичный fund_floor = r/lev (0.005/20) — линия 0.025% цены.
+FUND_FLOOR = Decimal("0.00025")
 COSTS = CostModel()
 SLIPPAGE = COSTS.slippage
 ZERO = Decimal("0")
@@ -173,14 +175,22 @@ def test_registry_builds_jaguar_and_satisfies_protocol() -> None:
 
 
 def test_defaults_match_preregistration_k1() -> None:
-    """к1 заморожен: риск 1% капитала, TP1 на 1.5R — дефолты конструктора."""
+    """к1/к5-4 заморожены: риск 1% капитала, TP1 на 1.5R, fund_floor 0.00025.
+
+    Снимок ровно-равен: список дефолтов конструктора и есть контракт, новый
+    PARAM добавляется в него вместе со своим замороженным значением.
+    """
     defaults = {
         name: parameter.default
         for name, parameter in inspect.signature(JaguarEmaStrategy.__init__).parameters.items()
         if parameter.default is not inspect.Parameter.empty
     }
-    assert defaults == {"risk_frac": RISK_FRAC, "tp_mult": TP_MULT}
-    assert JaguarEmaStrategy.PARAM_NAMES == ("risk_frac", "tp_mult")
+    assert defaults == {
+        "risk_frac": RISK_FRAC,
+        "tp_mult": TP_MULT,
+        "fund_floor": FUND_FLOOR,
+    }
+    assert JaguarEmaStrategy.PARAM_NAMES == ("risk_frac", "tp_mult", "fund_floor")
 
 
 def test_from_params_rejects_unknown_and_passes_known() -> None:
