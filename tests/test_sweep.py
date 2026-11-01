@@ -16,6 +16,7 @@ from strategylab.core.bars import Bar
 from strategylab.data.schema import SCHEMA, connect
 from strategylab.data.store import CandleStore
 from strategylab.data.zones import Zone, assign_zone
+from strategylab.strategy.jaguar_ema import JaguarEmaStrategy
 
 SYMBOL = "BTCUSDT"
 START_TS = 1717200000  # 2024-06-01T00:00:00Z
@@ -211,3 +212,17 @@ def test_touch_registry_silent_on_fit_only_window(tmp_path: Path, monkeypatch, c
     out = capsys.readouterr().out
     assert "touches: holdout=0, live=0" in out
     assert not registry.exists()
+
+
+def test_none_default_switch_in_known_not_in_defaults() -> None:
+    """Раунд 7 BLOCKER-1: выключатель с дефолтом None (`be_mult` у JAGUAR) не
+    ломает развёртку: в `_defaults` его нет (дефолтный прогон воспроизводит спек
+    раунда 6), в `_known` он есть (сетка принимает `--param be_mult=1.0`)."""
+    module = _load_sweep()
+    assert module._defaults(JaguarEmaStrategy) == {
+        "risk_frac": Decimal("0.01"),
+        "tp_mult": Decimal("1.5"),
+        "fund_floor": Decimal("0.00025"),
+    }
+    assert module._known(JaguarEmaStrategy) == {"risk_frac", "tp_mult", "fund_floor", "be_mult"}
+    assert module._required(JaguarEmaStrategy) == set()
