@@ -414,3 +414,12 @@ origin/spec01-two-sided-momentum (463fb17), origin/diag/spec01-exploration (f14c
   464/3 гейты. Worktree'ов не осталось, feat/* локальные ветки удалены (origin хранит).
   Открытые follow-ups: F-1 (verify_spec04 до-фиксная очередь), F-2/F-3 (minor), F-4 (PESS
   в докстринге jaguar). Раунд закрыт, новая ступень = только owner-решение.
+- 2026-11-01 17:3x: OWNER «делай пуш в репо» — СМЕНА ПОЛИТИКИ: лидгер теперь В GIT.
+  Два коммита на origin calibration-suite: 47925f8 (письма+gitignore: удалена строка
+  .superpowers/, добавлен egg-info) и ca6c841 (весь sdd: 113 файлов —state.md всех фаз,
+  пререгистрации round3/round4 с амендом, 5 ревью, baseline-diff, provenance funding-load,
+  meas-скрипты round3/round4 + D-артефакты из Temp). Причина первого промаха: вложенный
+  .superpowers/sdd/.gitignore='*' (самоигнор, созданный ECC-инструментом) — удалён;
+  ЕСЛИ ИНСТРУМЕНТ ВОССТАНОВИТ ЕГО — не коммитить молча, сверяться с этим записи.
+  Секретов в лидгере не найдено (grep api/key/token/Bearer — пусто). Статус чист,
+  local==origin ca6c841.
