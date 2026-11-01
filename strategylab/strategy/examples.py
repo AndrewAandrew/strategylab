@@ -10,6 +10,7 @@ from strategylab.strategy.base import Strategy, StrategyState
 from strategylab.strategy.dca_grid import DcaGridStrategy
 from strategylab.strategy.flat_keltner import FlatKeltnerStrategy
 from strategylab.strategy.limit_pullback import LimitPullbackStrategy
+from strategylab.strategy.smc_choch_fvg import SmcChochFvgStrategy
 from strategylab.strategy.sweep_liquidity import SweepLiquidityStrategy
 from strategylab.strategy.trend_pullback import TrendPullbackStrategy
 
@@ -82,6 +83,7 @@ STRATEGY_CLASSES: dict[str, type[Strategy]] = {
     "flat_keltner": FlatKeltnerStrategy,
     "trend_pullback": TrendPullbackStrategy,
     "sweep_liquidity": SweepLiquidityStrategy,
+    "smc_choch_fvg": SmcChochFvgStrategy,
     "limit_pullback": LimitPullbackStrategy,
     "dca_grid": DcaGridStrategy,
 }
@@ -99,6 +101,8 @@ def build(name: str, params: Mapping[str, Decimal]) -> Strategy:
         return TrendPullbackStrategy.from_params(params)
     if name == "sweep_liquidity":
         return SweepLiquidityStrategy.from_params(params)
+    if name == "smc_choch_fvg":
+        return SmcChochFvgStrategy.from_params(params)
     if name == "limit_pullback":
         return LimitPullbackStrategy.from_params(params)
     if name == "dca_grid":
