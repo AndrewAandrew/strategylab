@@ -1,0 +1,39 @@
+j_b1_h_btc f1: n=149 SUM_a=22.821576 SUM_b=22.821576 wins_a=59 wins_j=59 net=-4217.654326
+j_b1_h_btc f2: n=122 SUM_a=12.678159 SUM_b=12.678159 wins_a=50 wins_j=50 net=-2049.109360
+j_b1_h_btc f3: n=152 SUM_a=-8.965734 SUM_b=-8.965734 wins_a=66 wins_j=66 net=-3658.118687
+j_b1_h_btc AGG: n=423 SUM_a=26.534001 mean_a=0.062728 SUM_b=26.534001 mean_b=0.062728 wins_a=175 WR_a=41.3712 wins_j=175 WR_j=41.3712 net=-9924.882374
+
+j_b1_h_eth f1: n=154 SUM_a=42.556498 SUM_b=42.556498 wins_a=71 wins_j=71 net=-2431.107451
+j_b1_h_eth f2: n=139 SUM_a=-5.313301 SUM_b=-5.313301 wins_a=57 wins_j=57 net=-4708.526492
+j_b1_h_eth f3: n=141 SUM_a=11.958517 SUM_b=11.958517 wins_a=57 wins_j=57 net=-5037.470211
+j_b1_h_eth AGG: n=434 SUM_a=49.201715 mean_a=0.113368 SUM_b=49.201715 mean_b=0.113368 wins_a=185 WR_a=42.6267 wins_j=185 WR_j=42.6267 net=-12177.104153
+
+j_b25_h_btc f1: n=133 SUM_a=24.669236 SUM_b=24.669236 wins_a=42 wins_j=42 net=-4475.518044
+j_b25_h_btc f2: n=102 SUM_a=7.123412 SUM_b=7.123412 wins_a=34 wins_j=34 net=-1916.734141
+j_b25_h_btc f3: n=136 SUM_a=2.691215 SUM_b=2.691215 wins_a=49 wins_j=49 net=-3252.776525
+j_b25_h_btc AGG: n=371 SUM_a=34.483862 mean_a=0.092948 SUM_b=34.483862 mean_b=0.092948 wins_a=125 WR_a=33.6927 wins_j=125 WR_j=33.6927 net=-9645.028710
+
+j_b25_h_eth f1: n=136 SUM_a=56.712869 SUM_b=56.712869 wins_a=49 wins_j=49 net=-2317.242178
+j_b25_h_eth f2: n=127 SUM_a=2.032433 SUM_b=2.032433 wins_a=43 wins_j=43 net=-4589.068301
+j_b25_h_eth f3: n=130 SUM_a=1.382419 SUM_b=1.382419 wins_a=43 wins_j=43 net=-4987.269495
+j_b25_h_eth AGG: n=393 SUM_a=60.127721 mean_a=0.152997 SUM_b=60.127721 mean_b=0.152997 wins_a=135 WR_a=34.3511 wins_j=135 WR_j=34.3511 net=-11893.579974
+
+s_tp25_15_btc f1: n=256 SUM_a=-58.630332 SUM_b=-35.589648 wins_a=71 wins_j=75 net=-5675.059248
+s_tp25_15_btc f2: n=249 SUM_a=-46.598207 SUM_b=-24.187013 wins_a=71 wins_j=79 net=-5352.910419
+s_tp25_15_btc f3: n=277 SUM_a=-64.455566 SUM_b=-39.526149 wins_a=68 wins_j=76 net=-6250.959884
+s_tp25_15_btc AGG: n=782 SUM_a=-169.684105 mean_a=-0.216987 SUM_b=-99.302809 mean_b=-0.126986 wins_a=210 WR_a=26.8542 wins_j=230 WR_j=29.4118 net=-17278.929551
+
+s_tp25_15_eth f1: n=282 SUM_a=-4.790237 SUM_b=20.576472 wins_a=101 wins_j=106 net=-3661.365514
+s_tp25_15_eth f2: n=258 SUM_a=-28.037669 SUM_b=-4.830190 wins_a=80 wins_j=86 net=-4944.542887
+s_tp25_15_eth f3: n=265 SUM_a=-43.598241 SUM_b=-19.751248 wins_a=85 wins_j=90 net=-5067.351153
+s_tp25_15_eth AGG: n=805 SUM_a=-76.426146 mean_a=-0.094939 SUM_b=-4.004966 mean_b=-0.004975 wins_a=266 WR_a=33.0435 wins_j=282 WR_j=35.0311 net=-13673.259554
+
+s_tp60_15_btc f1: n=227 SUM_a=-71.146708 SUM_b=-50.713817 wins_a=44 wins_j=48 net=-5867.747562
+s_tp60_15_btc f2: n=223 SUM_a=-53.311890 SUM_b=-33.239419 wins_a=48 wins_j=57 net=-5280.095578
+s_tp60_15_btc f3: n=258 SUM_a=-62.443376 SUM_b=-39.221273 wins_a=53 wins_j=62 net=-6180.567551
+s_tp60_15_btc AGG: n=708 SUM_a=-186.901974 mean_a=-0.263986 SUM_b=-123.174509 mean_b=-0.173975 wins_a=145 WR_a=20.4802 wins_j=167 WR_j=23.5876 net=-17328.410691
+
+s_tp60_15_eth f1: n=246 SUM_a=-34.216528 SUM_b=-12.093693 wins_a=66 wins_j=71 net=-3679.955883
+s_tp60_15_eth f2: n=227 SUM_a=-47.279836 SUM_b=-26.859319 wins_a=51 wins_j=59 net=-4979.535089
+s_tp60_15_eth f3: n=231 SUM_a=-67.311544 SUM_b=-46.521533 wins_a=53 wins_j=59 net=-5263.070290
+s_tp60_15_eth AGG: n=704 SUM_a=-148.807908 mean_a=-0.211375 SUM_b=-85.474545 mean_b=-0.121413 wins_a=170 WR_a=24.1477 wins_j=189 WR_j=26.8466 net=-13922.561261
