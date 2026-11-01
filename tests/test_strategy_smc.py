@@ -285,11 +285,11 @@ def test_choch_requires_strict_break_of_last_confirmed_peak() -> None:
 
 
 def test_fvg_strict_and_freshness_needs_fvg_at_or_after_choch() -> None:
-    """FVG — строгое L(t) > H(t−2); свежеть — дословно f.bar >= c.bar и <= 5.
+    """FVG — строгое L(t) > H(t−2); свежесть — аменд §6 от 2026-11-01.
 
     Вариант с L17 = 107 = H15: FVG на 17 нет, остаётся старый FVG(15) — он
-    старше CHoCH(17) и по замороженному правилу (f.bar >= c.bar) не образует
-    пару, входа нет ни на 19, ни дальше.
+    раньше CHoCH(17) и по клаузе аменда (f.bar >= c.bar: бар FVG не раньше
+    бара CHoCH) не образует пару, входа нет ни на 19, ни дальше.
     """
     baseline = SmcChochFvgStrategy()
     _feed_flat(baseline, _bars(_LONG_SPEC[:18]))
