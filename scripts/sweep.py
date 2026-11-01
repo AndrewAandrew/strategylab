@@ -149,12 +149,18 @@ def _defaults(strategy_class: type[Strategy]) -> dict[str, Decimal]:
     """Дефолты параметров стратегии из сигнатуры конструктора.
 
     Пустой словарь — у стратегии нет параметров с дефолтами (`buy_hold`).
+    Параметры с дефолтом `None` (выключатели, `be_mult` у JAGUAR) в словарь
+    не входят: стратегию они получают из конструктора, а прогон на дефолтах
+    не добавляет в спек ключ-выключатель — `spec_version` дефолтной ячейки
+    воспроизводит спек предыдущего раунда (раунд 7, к7-2, smoke к7-6(ii)).
     """
     defaults: dict[str, Decimal] = {}
     for name, parameter in _signature_params(strategy_class).items():
         if parameter.default is inspect.Parameter.empty:
             continue
         value = parameter.default
+        if value is None:
+            continue
         if not isinstance(value, Decimal):
             raise ValueError(f"дефолт параметра {name} — не Decimal: {value!r}")
         defaults[name] = value
@@ -168,6 +174,15 @@ def _required(strategy_class: type[Strategy]) -> set[str]:
         for name, parameter in _signature_params(strategy_class).items()
         if parameter.default is inspect.Parameter.empty
     }
+
+
+def _known(strategy_class: type[Strategy]) -> set[str]:
+    """Имена, которые принимает `--param`: вся сигнатура конструктора.
+
+    Включает выключатели с дефолтом `None`: они не входят в `_defaults`,
+    но явно задать их можно (`--param be_mult=1.0`).
+    """
+    return set(_signature_params(strategy_class))
 
 
 def _combinations(grid: Mapping[str, list[Decimal]]) -> list[dict[str, Decimal]]:
@@ -426,7 +441,7 @@ def _sweep(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     defaults = _defaults(strategy_class)
     required = _required(strategy_class)
     grid = _merge_grid(args.param)
-    unknown = sorted(set(grid) - set(defaults) - required)
+    unknown = sorted(set(grid) - _known(strategy_class))
     if unknown:
         parser.error(f"у стратегии {args.strategy} нет таких параметров: {unknown}")
     missing = sorted(required - set(grid))

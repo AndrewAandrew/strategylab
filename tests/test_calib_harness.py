@@ -682,3 +682,58 @@ def test_cli_leverage_default_and_double_costs_combo(
     stem2 = f"buy_hold_{SYMBOL}_{START_TS}_{end_ts}_dc"
     csv2 = (out2 / f"{stem2}.csv").read_text(encoding="utf-8")
     assert "costs: taker_fee=0.0012 maker_fee=0.0004 slippage=0.0010 leverage=10" in csv2
+
+
+def test_cli_grid_jaguar_none_default_switch(
+    harness: ModuleType, tmp_db: Path, tmp_path: Path
+) -> None:
+    """BLOCKER-1 tool-path: сетка JAGUAR жива при выключателе с дефолтом None.
+
+    Прогон без be_mult пишет артефакты (до фикса харнесс падал в `_defaults`
+    до первой базы), `--param be_mult=1.0` принимается и становится колонкой
+    сетки, опечатка в имени параметра — по-прежнему громкий отказ.
+    """
+    end_ts = START_TS + 60 * 200
+    base = [
+        str(tmp_db), SYMBOL, str(START_TS), str(end_ts), "jaguar_ema",
+        "--interval", "1m", "--capital", "10000",
+    ]
+    stem = f"jaguar_ema_{SYMBOL}_{START_TS}_{end_ts}"
+
+    out = tmp_path / "jdef"
+    harness.main(base + ["--out", str(out)])
+    lines = (out / f"{stem}.csv").read_text(encoding="utf-8").splitlines()
+    assert "отклонено: 0" in lines
+    columns = next(line for line in lines if line.startswith("fork,spec_version"))
+    assert "be_mult" not in columns  # выключатель не лезет в дефолтную сетку
+
+    out2 = tmp_path / "jbe"
+    harness.main(base + ["--param", "be_mult=1.0", "--out", str(out2)])
+    lines2 = (out2 / f"{stem}.csv").read_text(encoding="utf-8").splitlines()
+    assert "отклонено: 0" in lines2
+    columns2 = next(line for line in lines2 if line.startswith("fork,spec_version"))
+    assert columns2.split(",")[2] == "be_mult"
+
+    out3 = tmp_path / "junk"
+    with pytest.raises(SystemExit, match="нет таких параметров"):
+        harness.main(base + ["--param", "be_multi=1.0", "--out", str(out3)])
+    assert not out3.exists()
+
+
+def test_jaguar_default_spec_reproduces_round6_version(harness: ModuleType) -> None:
+    """к7-6(ii): спек JAGUAR на дефолтах + r6-сетка без ключа-выключателя побайтно
+    = спек раунда 6 (BTCUSDT 1h f1) — иначе регрессионный smoke нечем сверять;
+    явный be_mult меняет версию (клетки r7 различимы)."""
+    params = {
+        "risk_frac": Decimal("0.005"),
+        "tp_mult": Decimal("1.5"),
+        "fund_floor": Decimal("0.00025"),
+    }
+    spec = harness._make_spec("jaguar_ema", SYMBOL, params, 1761523200, 1771113600, Interval.HOUR)
+    assert spec.version == "702f8ba1dbd3"
+
+    spec_be = harness._make_spec(
+        "jaguar_ema", SYMBOL, {**params, "be_mult": Decimal("1.0")},
+        1761523200, 1771113600, Interval.HOUR,
+    )
+    assert spec_be.version != spec.version

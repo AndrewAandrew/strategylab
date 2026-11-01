@@ -349,7 +349,7 @@ def _run_grid(args: argparse.Namespace) -> None:
     defaults: dict[str, Decimal] = _SWEEP._defaults(strategy_class)
     required: set[str] = _SWEEP._required(strategy_class)
     grid: dict[str, list[Decimal]] = _SWEEP._merge_grid(args.param)
-    unknown = sorted(set(grid) - set(defaults) - required)
+    unknown = sorted(set(grid) - _SWEEP._known(strategy_class))
     if unknown:
         raise SystemExit(f"у стратегии {args.strategy} нет таких параметров: {unknown}")
     missing = sorted(required - set(grid))

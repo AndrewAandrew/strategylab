@@ -58,6 +58,16 @@ reduce-only заявки (``_cancel_reduced``) — двойного выхода
 Полный выход (перекрывает трейлинг): ``close < EMA34`` — MARKET reduce_only
 на остаток; шорт — ``close > EMA34``. Look-ahead нет: только закрытые бары,
 история индикаторов сдвигается в конце on_bar.
+
+Раунд 7 (ось «источник профита», к7-2): параметр ``be_mult`` — безубыточный
+рэтчёт ДО TP1. Пока позиция жива и TP1 ещё не было (TP1 детектируется по
+закрытию бара раньше проверки рэтчета), если ``close >= entry + be_mult·R``
+(лонг; зеркально шорт), стоп ЕДИНОЖДЫ переносится на ``entry·(1 + 0.0002)``
+(шорт — ``entry·(1 − 0.0002)``); буфер — константа кода, не PARAM. entry/R —
+оценка и риск брекета (close исполняющего бара, решение 4). Дефолт ``None`` =
+выключено = побайтовое поведение раунда 6. Рэтчет не отменяет трейлинг по
+EMA13 после TP1: уровни монотонны (общий ``self._stop``). Без брекета (R<=0
+гэп) рэтчета нет: нечего отсчитывать.
 """
 
 from __future__ import annotations
@@ -76,6 +86,9 @@ _ONE = Decimal("1")
 _EMA_FAST = 13
 _EMA_SLOW = 34
 
+# к7-2: буфер безубыточного рэтчета — доля цены, константа кода (не PARAM).
+_BE_BUFFER = Decimal("0.0002")
+
 
 class JaguarEmaStrategy:
     """JAGUAR: лонг/шорт на откате к EMA13 в тренде EMA13/EMA34, M5.
@@ -85,24 +98,27 @@ class JaguarEmaStrategy:
     на 1.5R), после TP1 стоп трейлит EMA13, закрытие тренда — выход по
     close за EMA34. Зеркальные шорты включены всегда: это часть класса.
     Сигналы с ``R / close(сигнального бара) < fund_floor`` пропускаются —
-    ни одной заявки (раунд 5, §1).
+    ни одной заявки (раунд 5, §1). При заданном ``be_mult`` до TP1 один раз
+    включается безубыточный рэтчет стопа (раунд 7, к7-2); по умолчанию выключен.
     """
 
     name = "jaguar_ema"
 
-    PARAM_NAMES = ("risk_frac", "tp_mult", "fund_floor")
+    PARAM_NAMES = ("risk_frac", "tp_mult", "fund_floor", "be_mult")
 
     def __init__(
         self,
         risk_frac: Decimal = Decimal("0.01"),
         tp_mult: Decimal = Decimal("1.5"),
         fund_floor: Decimal = Decimal("0.00025"),
+        be_mult: Decimal | None = None,
     ) -> None:
         self._risk_frac = positive(risk_frac, "risk_frac")
         if self._risk_frac > _ONE:
             raise ValueError(f"risk_frac должен быть <= 1, получено {risk_frac}")
         self._tp_mult = positive(tp_mult, "tp_mult")
         self._fund_floor = positive(fund_floor, "fund_floor")
+        self._be_mult = positive(be_mult, "be_mult") if be_mult is not None else None
 
         self._ema_fast = Ema(_EMA_FAST)
         self._ema_slow = Ema(_EMA_SLOW)
@@ -118,6 +134,10 @@ class JaguarEmaStrategy:
         self._entry_qty: Decimal | None = None
         self._trailing = False
         self._exit_pending = False
+        # Раунд 7 (к7-2): рэтчет безубытка до TP1; база/R из заморозки брекета.
+        self._be_base: Decimal | None = None
+        self._be_risk: Decimal | None = None
+        self._be_done = False
 
     @classmethod
     def from_params(cls, params: Mapping[str, Decimal]) -> JaguarEmaStrategy:
@@ -212,6 +232,9 @@ class JaguarEmaStrategy:
         if risk <= 0:
             return []
         self._entry_qty = qty
+        if self._be_mult is not None:
+            self._be_base = entry
+            self._be_risk = risk
         exit_side = Side.SELL if long else Side.BUY
         target = entry + self._tp_mult * risk if long else entry - self._tp_mult * risk
         return [
@@ -240,6 +263,9 @@ class JaguarEmaStrategy:
             return [Order(exit_side, OrderKind.MARKET, qty, None, None, True)]
         if self._entry_qty is not None and qty < self._entry_qty:
             self._trailing = True
+        ratchet = self._be_ratchet_order(bar, long, qty)
+        if ratchet is not None:
+            return [ratchet]
         stop = self._stop
         if not self._trailing or stop is None:
             return []
@@ -250,9 +276,43 @@ class JaguarEmaStrategy:
         exit_side = Side.SELL if long else Side.BUY
         return [Order(exit_side, OrderKind.STOP_MARKET, qty, None, new_stop, True)]
 
+    def _be_ratchet_order(self, bar: Bar, long: bool, qty: Decimal) -> Order | None:
+        """к7-2: однократный перенос стопа на безубыток с буфером, пока TP1 не было.
+
+        Живёт только при заданном be_mult и замороженном брекете (база и R из
+        _bracket_orders). Условие — close исполняющего бара за порогом
+        entry + be_mult·R (шорт зеркально); уровень строго лучше текущего стопа,
+        иначе заявка не нужна. После срабатывания (_be_done) не возвращается:
+        рэтчет однократный, дальнейший путь — только EMA13-трейлинг после TP1.
+        """
+        if self._be_mult is None or self._trailing or self._be_done:
+            return None
+        base, risk, stop = self._be_base, self._be_risk, self._stop
+        if base is None or risk is None or stop is None:
+            return None
+        if long:
+            if bar.close < base + self._be_mult * risk:
+                return None
+            level = base * (_ONE + _BE_BUFFER)
+            if level <= stop:
+                return None
+        else:
+            if bar.close > base - self._be_mult * risk:
+                return None
+            level = base * (_ONE - _BE_BUFFER)
+            if level >= stop:
+                return None
+        self._stop = level
+        self._be_done = True
+        exit_side = Side.SELL if long else Side.BUY
+        return Order(exit_side, OrderKind.STOP_MARKET, qty, None, level, True)
+
     def _reset_trade_state(self) -> None:
         """Флэт: сделка закрыта (стоп, выход или сведение окна) — всё сброшено."""
         self._stop = None
         self._entry_qty = None
         self._trailing = False
         self._exit_pending = False
+        self._be_base = None
+        self._be_risk = None
+        self._be_done = False
