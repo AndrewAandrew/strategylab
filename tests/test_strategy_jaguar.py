@@ -21,7 +21,7 @@ import pytest
 
 from strategylab.broker.costs import CostModel, IntrabarOrder
 from strategylab.broker.orders import Fill, Order, OrderKind, Side
-from strategylab.broker.sim import BrokerSimulator
+from strategylab.broker.sim import BrokerSimulator, MarginError
 from strategylab.core.bars import Bar, Interval
 from strategylab.core.engine import Engine
 from strategylab.core.metrics import Metrics
@@ -139,8 +139,12 @@ class _ListFeed:
 class _RecordingBroker(BrokerSimulator):
     """Брокер, запоминающий филлы, применённые через apply_bar."""
 
-    def __init__(self, intrabar: IntrabarOrder = IntrabarOrder.PESSIMISTIC) -> None:
-        super().__init__(COSTS, intrabar)
+    def __init__(
+        self,
+        intrabar: IntrabarOrder = IntrabarOrder.PESSIMISTIC,
+        costs: CostModel = COSTS,
+    ) -> None:
+        super().__init__(costs, intrabar)
         self.fills: list[Fill] = []
 
     def apply_bar(self, bar: Bar) -> list[Fill]:
@@ -552,3 +556,139 @@ def test_short_engine_lifecycle_tp1_then_trailing_stop() -> None:
     assert stop.price == _oracle_emas(bars)[0][62] * (Decimal(1) + SLIPPAGE)
     assert not broker.position.is_open
     assert broker.pending_orders == []
+
+
+# --- Fundability-skip (раунд 5, §1) -----------------------------------------
+
+# Плавная ступенька: EMA13/EMA34 сходятся (зазор ~0.001), сигналы — плотные.
+GENTLE = _staircase("0.0001", "100", 60)
+# Триггер long по ленте GENTLE: R/close(60) = 0.0002422 (tight) / 0.0002611 (wide).
+TIGHT_TRIGGER = _mk(60, "100.040", "100.040", "100.000", "100.030")
+WIDE_TRIGGER = _mk(60, "100.042", "100.042", "100.000", "100.032")
+
+
+def _latched_jaguar(fund_floor: str = "0.00025") -> JaguarEmaStrategy:
+    """Стратегия с руками выставленной историей фильтра: триггер на любой свече."""
+    strategy = JaguarEmaStrategy(fund_floor=Decimal(fund_floor))
+    strategy._p1_fast, strategy._p2_fast = Decimal("100"), Decimal("99")
+    strategy._p1_slow, strategy._p2_slow = Decimal("99"), Decimal("98")
+    return strategy
+
+
+def test_fund_floor_skips_tight_signal_and_next_signal_trades() -> None:
+    """rho(60) < floor: ни заявок, ни состояния — как будто сигнала не было (§1).
+
+    Машинка не сломана: следующий (wide) сигнал торгуется обычно. Тот же tight
+    сигнал торгуется при floor ниже его rho — skip делает ровно фильтр.
+    """
+    _f_values, s_values = _oracle_emas(GENTLE + [TIGHT_TRIGGER])
+    assert (TIGHT_TRIGGER.close - s_values[60]) / TIGHT_TRIGGER.close < FUND_FLOOR
+    _f_values, s_values = _oracle_emas(GENTLE + [WIDE_TRIGGER])
+    assert (WIDE_TRIGGER.close - s_values[60]) / WIDE_TRIGGER.close > FUND_FLOOR
+
+    strategy = JaguarEmaStrategy()
+    ramp = _staircase("1", "101", 50)  # бары 61..110: тела плоские, триггеров нет
+    result = _drive(strategy, GENTLE + [TIGHT_TRIGGER, ramp[0]], {})
+    assert result == {}
+    assert (
+        strategy._entry_pending,
+        strategy._stop,
+        strategy._entry_qty,
+        strategy._trailing,
+        strategy._exit_pending,
+    ) == (False, None, None, False, False)
+
+    loose = _drive(
+        JaguarEmaStrategy(fund_floor=Decimal("0.0002")), GENTLE + [TIGHT_TRIGGER], {}
+    )
+    assert sorted(loose) == [60]  # без гейта сигнал торговался бы
+
+    wide = _mk(111, "147", "147", "143", "145")  # крутой тренд: rho ~= 0.07
+    later = _drive(JaguarEmaStrategy(), GENTLE + [TIGHT_TRIGGER] + ramp + [wide], {})
+    assert sorted(later) == [111]
+    assert _is_entry(later[111][0]) and later[111][0].side is Side.BUY
+
+
+def test_fund_floor_at_r_over_leverage_excludes_margin_crash() -> None:
+    """floor = risk_frac/leverage: прошедшие гейт входы проходимы по марже (§1, §3).
+
+    lev 20, risk_frac 0.005 (default floor 0.00025 = 0.005/20): tight-сигнал
+    skipнут — прогон чистый; тот же сигнал при floor под его rho — MarginError
+    на подаче (от чего фильтр и защищает); wide-сигнал над линией торгуется.
+    """
+    lev20 = CostModel(leverage=Decimal("20"))
+    fill_bar = _mk(61, "100.03", "100.04", "100.01", "100.03")
+
+    tight = _RecordingBroker(costs=lev20)
+    Engine().run(
+        _ListFeed(GENTLE + [TIGHT_TRIGGER, fill_bar]),
+        JaguarEmaStrategy(risk_frac=Decimal("0.005")),
+        tight,
+        Metrics(equity=EQUITY),
+    )
+    assert tight.fills == []  # входа не было — нечему и падать
+    assert not tight.position.is_open
+    assert tight.pending_orders == []
+
+    with pytest.raises(MarginError):
+        broker = _RecordingBroker(costs=lev20)
+        Engine().run(
+            _ListFeed(GENTLE + [TIGHT_TRIGGER, fill_bar]),
+            JaguarEmaStrategy(risk_frac=Decimal("0.005"), fund_floor=Decimal("0.00024")),
+            broker,
+            Metrics(equity=EQUITY),
+        )
+
+    _f_values, s_values = _oracle_emas(GENTLE + [WIDE_TRIGGER])
+    risk = WIDE_TRIGGER.close - s_values[60]
+    traded = _RecordingBroker(costs=lev20)
+    Engine().run(
+        _ListFeed(GENTLE + [WIDE_TRIGGER, fill_bar]),
+        JaguarEmaStrategy(risk_frac=Decimal("0.005")),
+        traded,
+        Metrics(equity=EQUITY),
+    )
+    assert [fill.reason for fill in traded.fills] == ["market"]
+    assert traded.fills[0].qty == EQUITY * Decimal("0.005") / risk
+
+
+def test_fund_floor_is_registered_param_and_validates() -> None:
+    """PARAM реестра: строковое Decimal-значение доезжает до гейта, мусор — ValueError."""
+    assert "fund_floor" in JaguarEmaStrategy.PARAM_NAMES
+    passed = JaguarEmaStrategy.from_params({"fund_floor": Decimal("0.001")})
+    assert passed._fund_floor == Decimal("0.001")
+    for bad in (ZERO, Decimal("-0.0001")):
+        with pytest.raises(ValueError, match="fund_floor"):
+            build("jaguar_ema", {"fund_floor": bad})
+
+    # значение из реестра работает: rho 0.00026 wide-сигнала ниже 0.001 — skip,
+    # а default 0.00025 тот же сигнал торгует; обратный порядок исключён.
+    wired = build("jaguar_ema", {"fund_floor": Decimal("0.001")})
+    assert _drive(wired, GENTLE + [WIDE_TRIGGER], {}) == {}
+    assert sorted(_drive(JaguarEmaStrategy(), GENTLE + [WIDE_TRIGGER], {})) == [60]
+
+
+def test_fund_floor_rho_is_over_trigger_close_and_equality_trades() -> None:
+    """rho = R / close(подающего бара), сравнение строгое: rho == floor торгуется.
+
+    База — именно close триггера: те же R и floor при close 100.001 уже ниже
+    линии; на базе mid (99.8) тот же сигнал проходил бы гейт.
+    """
+    state = StrategyState(position=ZERO, equity=EQUITY, bar_index=0)
+    trigger = _mk(0, "110", "110", "99.5", "100")
+    # R = 100 - 99.975 = 0.025: rho = 0.025/100 = 0.00025 ровно floor — торгуется.
+    equal = _latched_jaguar()._entry_orders(
+        trigger, state, Decimal("99.8"), Decimal("99.975")
+    )
+    assert len(equal) == 1 and _is_entry(equal[0]) and equal[0].side is Side.BUY
+    # R = 100 - 99.97501: rho чуть ниже линии — skip (строгое <).
+    below = _latched_jaguar()._entry_orders(
+        trigger, state, Decimal("99.8"), Decimal("99.97501")
+    )
+    assert below == []
+    # та же геометрия R=0.025 при close 100.001: rho = 0.025/100.001 < floor — skip;
+    # база mid (0.025/99.8 > floor) торговалась бы — знаменатель зафиксирован.
+    shifted = _latched_jaguar()._entry_orders(
+        _mk(0, "110", "110", "99.5", "100.001"), state, Decimal("99.8"), Decimal("99.976")
+    )
+    assert shifted == []
