@@ -1,0 +1,98 @@
+=== round6 grid start 2026-11-01T21:54:46.4523630+05:00 HEAD=692e2e7e75fa3129b0144e4092fd0f69b12db766 cells=24 ===
+CELL j_h_btc_f1 EXIT=0 TIME=5.1s
+  CMD: harness.py data/btcusdt.db BTCUSDT 1761523200 1771113600 jaguar_ema --interval hour --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --out data/calib/r6_j_h_btc_f1
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_j_h_btc_f1\jaguar_ema_BTCUSDT_1761523200_1771113600[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL j_h_eth_f1 EXIT=0 TIME=4.1s
+  CMD: harness.py data/ethusdt.db ETHUSDT 1761523200 1771113600 jaguar_ema --interval hour --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --out data/calib/r6_j_h_eth_f1
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_j_h_eth_f1\jaguar_ema_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL j_h_btc_f2 EXIT=0 TIME=4.1s
+  CMD: harness.py data/btcusdt.db BTCUSDT 1771113600 1780704000 jaguar_ema --interval hour --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --out data/calib/r6_j_h_btc_f2
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_j_h_btc_f2\jaguar_ema_BTCUSDT_1771113600_1780704000[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL j_h_eth_f2 EXIT=0 TIME=4.1s
+  CMD: harness.py data/ethusdt.db ETHUSDT 1771113600 1780704000 jaguar_ema --interval hour --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --out data/calib/r6_j_h_eth_f2
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_j_h_eth_f2\jaguar_ema_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL j_h_btc_f3 EXIT=0 TIME=4.1s
+  CMD: harness.py data/btcusdt.db BTCUSDT 1780704000 1790294400 jaguar_ema --interval hour --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --out data/calib/r6_j_h_btc_f3
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_j_h_btc_f3\jaguar_ema_BTCUSDT_1780704000_1790294400[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL j_h_eth_f3 EXIT=0 TIME=4.1s
+  CMD: harness.py data/ethusdt.db ETHUSDT 1780704000 1790294400 jaguar_ema --interval hour --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --out data/calib/r6_j_h_eth_f3
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_j_h_eth_f3\jaguar_ema_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL s_15_btc_f1 EXIT=0 TIME=5.1s
+  CMD: harness.py data/btcusdt.db BTCUSDT 1761523200 1771113600 smc_choch_fvg --interval 15m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --param ttl_bars=4 --param max_hold=16 --out data/calib/r6_s_15_btc_f1
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_s_15_btc_f1\smc_choch_fvg_BTCUSDT_1761523200_1771113600[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL s_15_eth_f1 EXIT=0 TIME=4s
+  CMD: harness.py data/ethusdt.db ETHUSDT 1761523200 1771113600 smc_choch_fvg --interval 15m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --param ttl_bars=4 --param max_hold=16 --out data/calib/r6_s_15_eth_f1
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_s_15_eth_f1\smc_choch_fvg_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL s_15_btc_f2 EXIT=0 TIME=4.1s
+  CMD: harness.py data/btcusdt.db BTCUSDT 1771113600 1780704000 smc_choch_fvg --interval 15m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --param ttl_bars=4 --param max_hold=16 --out data/calib/r6_s_15_btc_f2
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_s_15_btc_f2\smc_choch_fvg_BTCUSDT_1771113600_1780704000[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL s_15_eth_f2 EXIT=0 TIME=4.1s
+  CMD: harness.py data/ethusdt.db ETHUSDT 1771113600 1780704000 smc_choch_fvg --interval 15m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --param ttl_bars=4 --param max_hold=16 --out data/calib/r6_s_15_eth_f2
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_s_15_eth_f2\smc_choch_fvg_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL s_15_btc_f3 EXIT=0 TIME=4.1s
+  CMD: harness.py data/btcusdt.db BTCUSDT 1780704000 1790294400 smc_choch_fvg --interval 15m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --param ttl_bars=4 --param max_hold=16 --out data/calib/r6_s_15_btc_f3
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_s_15_btc_f3\smc_choch_fvg_BTCUSDT_1780704000_1790294400[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL s_15_eth_f3 EXIT=0 TIME=5.1s
+  CMD: harness.py data/ethusdt.db ETHUSDT 1780704000 1790294400 smc_choch_fvg --interval 15m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --param ttl_bars=4 --param max_hold=16 --out data/calib/r6_s_15_eth_f3
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_s_15_eth_f3\smc_choch_fvg_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL j_15_btc_f1 EXIT=0 TIME=5.1s
+  CMD: harness.py data/btcusdt.db BTCUSDT 1761523200 1771113600 jaguar_ema --interval 15m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --out data/calib/r6_j_15_btc_f1
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_j_15_btc_f1\jaguar_ema_BTCUSDT_1761523200_1771113600[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL j_15_eth_f1 EXIT=0 TIME=5.1s
+  CMD: harness.py data/ethusdt.db ETHUSDT 1761523200 1771113600 jaguar_ema --interval 15m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --out data/calib/r6_j_15_eth_f1
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_j_15_eth_f1\jaguar_ema_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL j_15_btc_f2 EXIT=0 TIME=5.1s
+  CMD: harness.py data/btcusdt.db BTCUSDT 1771113600 1780704000 jaguar_ema --interval 15m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --out data/calib/r6_j_15_btc_f2
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_j_15_btc_f2\jaguar_ema_BTCUSDT_1771113600_1780704000[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL j_15_eth_f2 EXIT=0 TIME=5.1s
+  CMD: harness.py data/ethusdt.db ETHUSDT 1771113600 1780704000 jaguar_ema --interval 15m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --out data/calib/r6_j_15_eth_f2
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_j_15_eth_f2\jaguar_ema_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL j_15_btc_f3 EXIT=0 TIME=5.1s
+  CMD: harness.py data/btcusdt.db BTCUSDT 1780704000 1790294400 jaguar_ema --interval 15m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --out data/calib/r6_j_15_btc_f3
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_j_15_btc_f3\jaguar_ema_BTCUSDT_1780704000_1790294400[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL j_15_eth_f3 EXIT=0 TIME=5.1s
+  CMD: harness.py data/ethusdt.db ETHUSDT 1780704000 1790294400 jaguar_ema --interval 15m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --out data/calib/r6_j_15_eth_f3
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_j_15_eth_f3\jaguar_ema_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL s_5_btc_f1 EXIT=0 TIME=6.1s
+  CMD: harness.py data/btcusdt.db BTCUSDT 1761523200 1771113600 smc_choch_fvg --interval 5m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --param ttl_bars=12 --param max_hold=48 --out data/calib/r6_s_5_btc_f1
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_s_5_btc_f1\smc_choch_fvg_BTCUSDT_1761523200_1771113600[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL s_5_eth_f1 EXIT=0 TIME=6.1s
+  CMD: harness.py data/ethusdt.db ETHUSDT 1761523200 1771113600 smc_choch_fvg --interval 5m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --param ttl_bars=12 --param max_hold=48 --out data/calib/r6_s_5_eth_f1
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_s_5_eth_f1\smc_choch_fvg_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL s_5_btc_f2 EXIT=0 TIME=6.1s
+  CMD: harness.py data/btcusdt.db BTCUSDT 1771113600 1780704000 smc_choch_fvg --interval 5m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --param ttl_bars=12 --param max_hold=48 --out data/calib/r6_s_5_btc_f2
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_s_5_btc_f2\smc_choch_fvg_BTCUSDT_1771113600_1780704000[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL s_5_eth_f2 EXIT=0 TIME=6.1s
+  CMD: harness.py data/ethusdt.db ETHUSDT 1771113600 1780704000 smc_choch_fvg --interval 5m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --param ttl_bars=12 --param max_hold=48 --out data/calib/r6_s_5_eth_f2
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_s_5_eth_f2\smc_choch_fvg_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL s_5_btc_f3 EXIT=0 TIME=6.1s
+  CMD: harness.py data/btcusdt.db BTCUSDT 1780704000 1790294400 smc_choch_fvg --interval 5m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --param ttl_bars=12 --param max_hold=48 --out data/calib/r6_s_5_btc_f3
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_s_5_btc_f3\smc_choch_fvg_BTCUSDT_1780704000_1790294400[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+CELL s_5_eth_f3 EXIT=0 TIME=6.1s
+  CMD: harness.py data/ethusdt.db ETHUSDT 1780704000 1790294400 smc_choch_fvg --interval 5m --leverage 20 --capital 10000 --param risk_frac=0.005 --param fund_floor=0.00025 --param ttl_bars=12 --param max_hold=48 --out data/calib/r6_s_5_eth_f3
+  RESULT: комбинаций: 1 | артефакты: data\calib\r6_s_5_eth_f3\smc_choch_fvg_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_journal_o.csv|_report_p.txt]
+  STDERR: 
+=== round6 grid end 2026-11-01T21:56:45.5691508+05:00 ===

@@ -1,0 +1,84 @@
+ROUND-6 CSV-ONLY AGGREGATION (brother). No DB reads at all.
+
+== ДИРЕКЦИОННЫЙ ЦЕНЗ (только артефакты) ==
+  exit_reason во всех журналах: ['market', 'stop', 'take_profit']
+  позиции: разрешены по способу {'qty': 1582, 'stop': 5631, 'pnl': 1152}; неоднозначных позиций 315, строк 315 (консервативный минимальный comb)
+  sign(comb) != sign(pnl) строк: 0 (обязано быть 0)
+
+== ПЕРВИЧНЫЕ КЛЕТКИ (J 1h × BTC/ETH, S 15m × BTC/ETH) ==
+
+### J×BTCUSDT 1h primary
+  f1: n=148 (AMBIG 5, upper mean add +0.0042pp) | WR_A=39.86% (WR по журналу 39.86) | A mean=0.1480% med=-0.2454% | net=-4120.8546$ | MDD=4601.46$ (46.01%) | end eq=5879.1454 | window_cancelled=2
+  f2: n=122 (AMBIG 4, upper mean add +0.0031pp) | WR_A=42.62% (WR по журналу 42.62) | A mean=0.1014% med=-0.1774% | net=-2040.5902$ | MDD=2790.46$ (27.90%) | end eq=7959.4098 | window_cancelled=0
+  f3: n=152 (AMBIG 7, upper mean add +0.0054pp) | WR_A=43.42% (WR по журналу 43.42) | A mean=-0.0618% med=-0.1696% | net=-3706.6172$ | MDD=3711.66$ (37.12%) | end eq=6293.3828 | window_cancelled=0
+  AGG: n=422
+  A: mean=0.0590% med=-0.2037% WR=41.94% bootstrap95=[-0.0528%, 0.1786%] (AMBIG rows 16, mean bound +0.0043pp)
+  rules: 1 [P](422); 2 [F](0.0590); 3 [F](f1=0.1480, f2=0.1014, f3=-0.0618); 4 [F](-0.0528); 5 [P] => DEAD
+
+### J×ETHUSDT 1h primary
+  f1: n=154 (AMBIG 7, upper mean add +0.0068pp) | WR_A=46.10% (WR по журналу 46.10) | A mean=0.2723% med=-0.1518% | net=-2503.3254$ | MDD=2675.14$ (26.75%) | end eq=7496.6746 | window_cancelled=2
+  f2: n=138 (AMBIG 2, upper mean add +0.0021pp) | WR_A=42.75% (WR по журналу 42.75) | A mean=-0.0110% med=-0.2311% | net=-4639.0130$ | MDD=4890.39$ (48.90%) | end eq=5360.9870 | window_cancelled=2
+  f3: n=142 (AMBIG 3, upper mean add +0.0026pp) | WR_A=41.55% (WR по журналу 41.55) | A mean=0.0876% med=-0.2360% | net=-5002.6957$ | MDD=5485.67$ (54.86%) | end eq=4997.3043 | window_cancelled=0
+  AGG: n=434
+  A: mean=0.1218% med=-0.2034% WR=43.55% bootstrap95=[-0.0362%, 0.2901%] (AMBIG rows 12, mean bound +0.0039pp)
+  rules: 1 [P](434); 2 [F](0.1218); 3 [F](f1=0.2723, f2=-0.0110, f3=0.0876); 4 [F](-0.0362); 5 [P] => DEAD
+
+### S×BTCUSDT 15m primary
+  f1: n=235 (AMBIG 9, upper mean add +0.0031pp) | WR_A=21.70% (WR по журналу 23.40) | A mean=-0.2755% med=-0.4861% | B mean=-0.1855% | net=-5882.5965$ | MDD=5889.33$ (58.89%) | end eq=4117.4035 | window_cancelled=0
+  f2: n=236 (AMBIG 7, upper mean add +0.0017pp) | WR_A=25.42% (WR по журналу 29.24) | A mean=-0.1903% med=-0.4294% | B mean=-0.1003% | net=-5159.1397$ | MDD=5225.50$ (52.25%) | end eq=4840.8603 | window_cancelled=0
+  f3: n=261 (AMBIG 13, upper mean add +0.0033pp) | WR_A=21.46% (WR по журналу 24.90) | A mean=-0.2558% med=-0.4249% | B mean=-0.1658% | net=-6381.9212$ | MDD=6539.94$ (65.40%) | end eq=3618.0788 | window_cancelled=0
+  AGG: n=732
+  A: mean=-0.2410% med=-0.4419% WR=22.81% bootstrap95=[-0.2916%, -0.1839%] (AMBIG rows 29, mean bound +0.0027pp)
+  B (maker): mean=-0.1510% med=-0.3521% WR=25.82%
+  rules: 1 [P](732); 2 [F](-0.2410); 3 [F](f1=-0.2755, f2=-0.1903, f3=-0.2558); 4 [F](-0.2916); 5 [P] => DEAD
+
+### S×ETHUSDT 15m primary
+  f1: n=265 (AMBIG 6, upper mean add +0.0013pp) | WR_A=31.70% (WR по журналу 33.58) | A mean=-0.0271% med=-0.4846% | B mean=0.0628% | net=-3423.7245$ | MDD=3423.72$ (34.24%) | end eq=6576.2755 | window_cancelled=2
+  f2: n=241 (AMBIG 5, upper mean add +0.0024pp) | WR_A=26.56% (WR по журналу 29.46) | A mean=-0.1183% med=-0.5023% | B mean=-0.0283% | net=-4905.0065$ | MDD=5469.13$ (54.69%) | end eq=5094.9935 | window_cancelled=0
+  f3: n=245 (AMBIG 6, upper mean add +0.0014pp) | WR_A=27.35% (WR по журналу 29.80) | A mean=-0.2184% med=-0.4775% | B mean=-0.1284% | net=-5095.2765$ | MDD=5229.29$ (52.29%) | end eq=4904.7235 | window_cancelled=0
+  AGG: n=751
+  A: mean=-0.1188% med=-0.4865% WR=28.63% bootstrap95=[-0.1945%, -0.0416%] (AMBIG rows 17, mean bound +0.0017pp)
+  B (maker): mean=-0.0288% med=-0.3963% WR=31.03%
+  rules: 1 [P](751); 2 [F](-0.1188); 3 [F](f1=-0.0271, f2=-0.1183, f3=-0.2184); 4 [F](-0.1945); 5 [P] => DEAD
+
+== ДИАГНОСТИКА (НЕ для спецификации) ==
+
+### J 15m BTC
+  f1: n=560 (AMBIG 27, upper mean add +0.0049pp) | WR_A=35.36% (WR по журналу 35.36) | A mean=-0.0334% med=-0.1914% | net=-9187.4019$ | MDD=9246.01$ (92.46%) | end eq=812.5981 | window_cancelled=0
+  f2: n=516 (AMBIG 25, upper mean add +0.0068pp) | WR_A=37.02% (WR по журналу 37.02) | A mean=-0.0254% med=-0.2001% | net=-9055.3041$ | MDD=9100.29$ (91.00%) | end eq=944.6959 | window_cancelled=0
+  f3: n=485 (AMBIG 20, upper mean add +0.0055pp) | WR_A=33.40% (WR по журналу 33.40) | A mean=-0.0959% med=-0.2241% | net=-9410.4373$ | MDD=9936.90$ (99.37%) | end eq=589.5627 | window_cancelled=0
+  AGG: n=1561
+  A: mean=-0.0502% med=-0.2041% WR=35.30% bootstrap95=[-0.0827%, -0.0158%] (AMBIG rows 72, mean bound +0.0057pp)
+  rules: 1 [P](1561); 2 [F](-0.0502); 3 [F](f1=-0.0334, f2=-0.0254, f3=-0.0959); 4 [F](-0.0827); 5 [P] => DEAD
+
+### J 15m ETH
+  f1: n=555 (AMBIG 17, upper mean add +0.0032pp) | WR_A=33.69% (WR по журналу 33.69) | A mean=-0.0540% med=-0.2566% | net=-9557.6147$ | MDD=9580.91$ (95.81%) | end eq=442.3853 | window_cancelled=0
+  f2: n=547 (AMBIG 22, upper mean add +0.0044pp) | WR_A=34.55% (WR по журналу 34.55) | A mean=-0.0432% med=-0.2272% | net=-9325.8382$ | MDD=9369.24$ (93.69%) | end eq=674.1618 | window_cancelled=0
+  f3: n=564 (AMBIG 24, upper mean add +0.0064pp) | WR_A=34.93% (WR по журналу 34.93) | A mean=-0.0442% med=-0.2231% | net=-9336.8670$ | MDD=10368.28$ (103.68%) | end eq=663.1330 | window_cancelled=1
+  AGG: n=1666
+  A: mean=-0.0471% med=-0.2317% WR=34.39% bootstrap95=[-0.0882%, 0.0024%] (AMBIG rows 63, mean bound +0.0047pp)
+  rules: 1 [P](1666); 2 [F](-0.0471); 3 [F](f1=-0.0540, f2=-0.0432, f3=-0.0442); 4 [F](-0.0882); 5 [P] => DEAD
+
+### S 5m BTC
+  f1: n=769 (AMBIG 21, upper mean add +0.0021pp) | WR_A=23.28% (WR по журналу 25.10) | A mean=-0.1690% med=-0.3894% | B mean=-0.0790% | net=-9504.9128$ | MDD=9504.91$ (95.05%) | end eq=495.0872 | window_cancelled=0
+  f2: n=809 (AMBIG 15, upper mean add +0.0013pp) | WR_A=25.09% (WR по журналу 26.45) | A mean=-0.1887% med=-0.3838% | B mean=-0.0987% | net=-9622.9382$ | MDD=9653.04$ (96.53%) | end eq=377.0618 | window_cancelled=0
+  f3: n=759 (AMBIG 30, upper mean add +0.0035pp) | WR_A=21.48% (WR по журналу 23.45) | A mean=-0.1872% med=-0.3729% | B mean=-0.0972% | net=-9719.0726$ | MDD=9815.44$ (98.15%) | end eq=280.9274 | window_cancelled=2
+  AGG: n=2337
+  A: mean=-0.1817% med=-0.3805% WR=23.32% bootstrap95=[-0.2046%, -0.1569%] (AMBIG rows 66, mean bound +0.0023pp)
+  B (maker): mean=-0.0918% med=-0.2906% WR=25.03%
+  rules: 1 [P](2337); 2 [F](-0.1817); 3 [F](f1=-0.1690, f2=-0.1887, f3=-0.1872); 4 [F](-0.2046); 5 [P] => DEAD
+
+### S 5m ETH
+  f1: n=778 (AMBIG 11, upper mean add +0.0013pp) | WR_A=26.61% (WR по журналу 27.12) | A mean=-0.1366% med=-0.4384% | B mean=-0.0466% | net=-9075.5752$ | MDD=9075.58$ (90.76%) | end eq=924.4248 | window_cancelled=0
+  f2: n=813 (AMBIG 9, upper mean add +0.0011pp) | WR_A=23.86% (WR по журналу 25.34) | A mean=-0.1484% med=-0.4313% | B mean=-0.0584% | net=-9337.6587$ | MDD=9349.70$ (93.50%) | end eq=662.3413 | window_cancelled=2
+  f3: n=768 (AMBIG 20, upper mean add +0.0018pp) | WR_A=26.82% (WR по журналу 28.65) | A mean=-0.0853% med=-0.3907% | B mean=0.0047% | net=-9045.0836$ | MDD=9455.75$ (94.56%) | end eq=954.9164 | window_cancelled=0
+  AGG: n=2359
+  A: mean=-0.1240% med=-0.4188% WR=25.73% bootstrap95=[-0.1567%, -0.0897%] (AMBIG rows 40, mean bound +0.0014pp)
+  B (maker): mean=-0.0340% med=-0.3290% WR=27.00%
+  rules: 1 [P](2359); 2 [F](-0.1240); 3 [F](f1=-0.1366, f2=-0.1484, f3=-0.0853); 4 [F](-0.1567); 5 [P] => DEAD
+
+== WINDOW_CANCELLED (снятые лимитки на конце окна, не skip-счётчик) ==
+  J 1h первичные: j_h_btc_f1:2, j_h_btc_f2:0, j_h_btc_f3:0, j_h_eth_f1:2, j_h_eth_f2:2, j_h_eth_f3:0
+  S 15m первичные: s_15_btc_f1:0, s_15_btc_f2:0, s_15_btc_f3:0, s_15_eth_f1:2, s_15_eth_f2:0, s_15_eth_f3:0
+== CONSISTENCY CHECKS ==
+  всего проверок 97, провалено 0
