@@ -1,10 +1,11 @@
 """Тесты сборщика спот-баров scripts/spot/fetch_spot.py (Series C, данные).
 
 Сеть не трогаем: getter/fetch внедряем. Проверяем парсер (нисходящий список →
-восходящий, floor мс, не-finite отбраковка), пагинацию жёсткими окнами (+cap и
-прямая передача limit), store idempotent (INSERT OR IGNORE), validate_rows
-(каждая проверка по отдельности), load_symbol (отказ записи при проблемах,
-dry-run, чистый путь), CLI window guard.
+восходящий, floor мс, не-finite отбраковка), retry/backoff сетевых сбоев,
+пагинацию жёсткими окнами (+cap и прямая передача limit), store idempotent
+(INSERT OR IGNORE), validate_rows (каждая проверка по отдельности),
+load_symbol (отказ записи при проблемах, dry-run, чистый путь), CLI window
+guard.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import importlib.util
 import sqlite3
 import sys
+import urllib.error
 from pathlib import Path
 from types import ModuleType
 
@@ -65,6 +67,44 @@ def test_parse_orders_floors_validates(spot: ModuleType) -> None:
         spot.parse_payload("X", payload([[str(0), "NaN", "1", "1", "1", "1", "1"]]))  # не finite
     with pytest.raises(spot.SpotParseError):
         spot.parse_payload("X", "not a dict")  # type: ignore[arg-type]
+
+
+def test_retry_absorbs_transient_failure(spot: ModuleType) -> None:
+    sleeps: list[float] = []
+    state = {"calls": 0}
+
+    def flaky(url: str) -> object:
+        state["calls"] += 1
+        if state["calls"] < 3:
+            raise urllib.error.URLError("getaddrinfo failed")  # как в реальном blip
+        return payload([bar(0)])
+
+    got = spot.get_json_with_retry("u", raw=flaky, sleep=sleeps.append)
+    assert got == payload([bar(0)])
+    assert sleeps == [1.0, 2.0]  # экспоненциальный backoff, пауз после успеха нет
+
+
+def test_retry_exhausts_then_raises_last(spot: ModuleType) -> None:
+    sleeps: list[float] = []
+
+    def always_fail(url: str) -> object:
+        raise OSError("сеть легла")
+
+    with pytest.raises(OSError, match="сеть легла"):
+        spot.get_json_with_retry(
+            "u", raw=always_fail, sleep=sleeps.append, attempts=4, backoff_s=0.5
+        )
+    assert sleeps == [0.5, 1.0, 2.0]  # три паузы на четырёх попытках
+
+
+def test_retry_does_not_swallow_logic_errors(spot: ModuleType) -> None:
+    def bad(url: str) -> object:
+        raise ValueError("не JSON")  # не сеть → мгновенно наружу, без ретрая
+
+    with pytest.raises(ValueError):
+        spot.get_json_with_retry(
+            "u", raw=bad, sleep=lambda s: (_ for _ in ()).throw(AssertionError)
+        )
 
 
 def test_pagination_hard_windows(spot: ModuleType) -> None:

@@ -37,6 +37,8 @@ MINUTE_MS = 60_000
 TIMEOUT_S = 30
 PAUSE_S = 0.15
 MAX_PROBLEMS_PER_CHECK = 10
+RETRY_ATTEMPTS = 5  # транзиентные сетевые сбои (DNS/timeouts/5xx) на длинном бэкфилле
+RETRY_BASE_S = 1.0  # экспоненциальный backoff: 1,2,4,8 сек между попытками
 
 SPOT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS spot_1m (
@@ -113,6 +115,33 @@ def _http_get_json(url: str) -> object:
         return json.loads(response.read().decode())
 
 
+def get_json_with_retry(
+    url: str,
+    *,
+    raw: Callable[[str], object] = _http_get_json,
+    sleep: Callable[[float], None] = time.sleep,
+    attempts: int = RETRY_ATTEMPTS,
+    backoff_s: float = RETRY_BASE_S,
+) -> object:
+    """raw-GET с экспоненциальным backoff на сетевых сбоях (бэкфилл ~960 вызовов).
+
+    Ловим OSError: URLError/HTTPError, socket.gaierror (DNS), socket.timeout,
+    ConnectionReset* — все его подклассы. Плохой JSON/логика биржи сюда не
+    доходят — это не транзиент, ретраить бессмысленно. После attempts неудач
+    последняя ошибка летит вверх (run падает громко, повтор окна = resume).
+    """
+    last: OSError | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return raw(url)
+        except OSError as error:
+            last = error
+            if attempt < attempts:
+                sleep(backoff_s * 2 ** (attempt - 1))
+    assert last is not None
+    raise last
+
+
 def fetch_page(
     symbol: str,
     start_ms: int,
@@ -121,7 +150,7 @@ def fetch_page(
     get_json: Callable[[str], object] | None = None,
 ) -> list[SpotBar]:
     """Один вызов kline (category=spot, interval=1) → бары окна [start_ms, end_ms]."""
-    getter = get_json if get_json is not None else _http_get_json
+    getter = get_json if get_json is not None else get_json_with_retry
     query = urllib.parse.urlencode(
         {
             "category": "spot",
