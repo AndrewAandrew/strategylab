@@ -1,0 +1,1280 @@
+{
+ "E-a1": {
+  "folds": {
+   "f1": {
+    "net_pnl": "1170.074791299000638723400290",
+    "annualized_pct": "38.47543232649866965171541494",
+    "rounds": 14,
+    "events": 40,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 14,
+    "n_forced": 0,
+    "deviation_version": "16e4e7ae2e55",
+    "zones": 11,
+    "price_gross": "1338.074791299000638723400290",
+    "friction": "168.0000"
+   },
+   "f2": {
+    "net_pnl": "1043.881548534257639597424431",
+    "annualized_pct": "34.32583470405441787865404660",
+    "rounds": 18,
+    "events": 59,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 18,
+    "n_forced": 0,
+    "deviation_version": "0fb2ff14c2ba",
+    "zones": 23,
+    "price_gross": "1259.881548534257639597424431",
+    "friction": "216.0000"
+   },
+   "f3": {
+    "net_pnl": "1824.947319677186136744318079",
+    "annualized_pct": "60.00952898037594053258343232",
+    "rounds": 14,
+    "events": 39,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 14,
+    "n_forced": 0,
+    "deviation_version": "633534fdc0ee",
+    "zones": 31,
+    "price_gross": "1992.947319677186136744318079",
+    "friction": "168.0000"
+   }
+  },
+  "pooled_net": "4038.903659510444415065142800",
+  "pooled_ann": "44.27026533697634268765096462",
+  "daily_sum_check": "4038.9036595104444",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -22.42501221412887,
+   "upper_97.5pct": 115.2550127815509,
+   "mean_replicates": 42.01531902576855
+  },
+  "gates": {
+   "E2-1": true,
+   "E2-2": true,
+   "E2-3": true,
+   "E2-4": false,
+   "E2-5": true,
+   "ALL": false
+  }
+ },
+ "E-a2": {
+  "folds": {
+   "f1": {
+    "net_pnl": "-859.2224197969815604335586940",
+    "annualized_pct": "-28.25371020053137563587828138",
+    "rounds": 14,
+    "events": 40,
+    "flat_fold": 0,
+    "n_stops": 10,
+    "n_takes": 4,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "f2062d48042b",
+    "zones": 11,
+    "price_gross": "-691.2224197969815604335586940",
+    "friction": "168.0000"
+   },
+   "f2": {
+    "net_pnl": "-255.6864446616894622729057360",
+    "annualized_pct": "-8.407707414551049885550503932",
+    "rounds": 18,
+    "events": 59,
+    "flat_fold": 0,
+    "n_stops": 11,
+    "n_takes": 7,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "b2fae4a67e0b",
+    "zones": 23,
+    "price_gross": "-39.6864446616894622729057360",
+    "friction": "216.0000"
+   },
+   "f3": {
+    "net_pnl": "1796.053558392090282035871410",
+    "annualized_pct": "59.05941881199215792280117699",
+    "rounds": 14,
+    "events": 39,
+    "flat_fold": 0,
+    "n_stops": 7,
+    "n_takes": 7,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "dc4fcdd0e599",
+    "zones": 31,
+    "price_gross": "1964.053558392090282035871410",
+    "friction": "168.0000"
+   }
+  },
+  "pooled_net": "681.144693933419259329406980",
+  "pooled_ann": "7.466000398969910800457463895",
+  "daily_sum_check": "681.1446939334194",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -37.12741431468143,
+   "upper_97.5pct": 53.09195274939059,
+   "mean_replicates": 7.751070361716596
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": true,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": true,
+   "ALL": false
+  }
+ },
+ "E-a3": {
+  "folds": {
+   "f1": {
+    "net_pnl": "2034.961627900111762775168025",
+    "annualized_pct": "66.91540488140007147864291253",
+    "rounds": 8,
+    "events": 40,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 8,
+    "n_forced": 0,
+    "deviation_version": "88d50bad1497",
+    "zones": 11,
+    "price_gross": "2130.961627900111762775168025",
+    "friction": "96.0000"
+   },
+   "f2": {
+    "net_pnl": "1526.146944057984230238855400",
+    "annualized_pct": "50.18411122352831027362001991",
+    "rounds": 12,
+    "events": 59,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 12,
+    "n_forced": 0,
+    "deviation_version": "7c45f7e44017",
+    "zones": 23,
+    "price_gross": "1670.146944057984230238855400",
+    "friction": "144.0000"
+   },
+   "f3": {
+    "net_pnl": "1918.316939025925664650519773",
+    "annualized_pct": "63.07979123823989798175132586",
+    "rounds": 12,
+    "events": 39,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 12,
+    "n_forced": 0,
+    "deviation_version": "a1d927459f5c",
+    "zones": 31,
+    "price_gross": "2062.316939025925664650519773",
+    "friction": "144.0000"
+   }
+  },
+  "pooled_net": "5479.425510984021657664543198",
+  "pooled_ann": "60.05976911438942657800475276",
+  "daily_sum_check": "5479.4255109840215",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": 5.5173126741942,
+   "upper_97.5pct": 125.91883907251834,
+   "mean_replicates": 61.244709667823855
+  },
+  "gates": {
+   "E2-1": true,
+   "E2-2": true,
+   "E2-3": true,
+   "E2-4": true,
+   "E2-5": true,
+   "ALL": true
+  }
+ },
+ "E-a4": {
+  "folds": {
+   "f1": {
+    "net_pnl": "1359.666979545932627731606270",
+    "annualized_pct": "44.70977004813201883982308906",
+    "rounds": 8,
+    "events": 40,
+    "flat_fold": 0,
+    "n_stops": 4,
+    "n_takes": 4,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "8143cf48dbbc",
+    "zones": 11,
+    "price_gross": "1455.666979545932627731606270",
+    "friction": "96.0000"
+   },
+   "f2": {
+    "net_pnl": "-1221.302098905621133268573111",
+    "annualized_pct": "-40.15993388293258681468731401",
+    "rounds": 12,
+    "events": 59,
+    "flat_fold": 0,
+    "n_stops": 9,
+    "n_takes": 3,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "d00874944c8c",
+    "zones": 23,
+    "price_gross": "-1077.302098905621133268573111",
+    "friction": "144.0000"
+   },
+   "f3": {
+    "net_pnl": "2346.291616713858218438283360",
+    "annualized_pct": "77.15283244149173420990751589",
+    "rounds": 12,
+    "events": 39,
+    "flat_fold": 0,
+    "n_stops": 7,
+    "n_takes": 5,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "d41b8189ba8a",
+    "zones": 31,
+    "price_gross": "2490.291616713858218438283360",
+    "friction": "144.0000"
+   }
+  },
+  "pooled_net": "2484.656497354169712901316519",
+  "pooled_ann": "27.23422286889705541168109698",
+  "daily_sum_check": "2484.65649735417",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -25.917729607614987,
+   "upper_97.5pct": 87.54977183620481,
+   "mean_replicates": 29.15285489759833
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": true,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": true,
+   "ALL": false
+  }
+ },
+ "E-a5": {
+  "folds": {
+   "f1": {
+    "net_pnl": "1450.013312308234901974879280",
+    "annualized_pct": "47.68061792725276929917395831",
+    "rounds": 7,
+    "events": 40,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 7,
+    "n_forced": 0,
+    "deviation_version": "cadf3ac73bc3",
+    "zones": 11,
+    "price_gross": "1534.013312308234901974879280",
+    "friction": "84.0000"
+   },
+   "f2": {
+    "net_pnl": "1223.858747050001339489973431",
+    "annualized_pct": "40.24400384443698098322885606",
+    "rounds": 10,
+    "events": 59,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 10,
+    "n_forced": 0,
+    "deviation_version": "68f11b778d1d",
+    "zones": 23,
+    "price_gross": "1343.858747050001339489973431",
+    "friction": "120.0000"
+   },
+   "f3": {
+    "net_pnl": "3041.436793714294869704795824",
+    "annualized_pct": "100.0112098833979844542567996",
+    "rounds": 10,
+    "events": 39,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 10,
+    "n_forced": 0,
+    "deviation_version": "129af07c36b9",
+    "zones": 31,
+    "price_gross": "3161.436793714294869704795824",
+    "friction": "120.0000"
+   }
+  },
+  "pooled_net": "5715.308853072531111169648535",
+  "pooled_ann": "62.64527721836257824555320465",
+  "daily_sum_check": "5715.308853072531",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": 19.403411271898833,
+   "upper_97.5pct": 119.58127511173126,
+   "mean_replicates": 64.16325215377272
+  },
+  "gates": {
+   "E2-1": true,
+   "E2-2": true,
+   "E2-3": true,
+   "E2-4": true,
+   "E2-5": true,
+   "ALL": true
+  }
+ },
+ "E-a6": {
+  "folds": {
+   "f1": {
+    "net_pnl": "1440.083966840122609428449290",
+    "annualized_pct": "47.35411242312114886859315232",
+    "rounds": 7,
+    "events": 40,
+    "flat_fold": 0,
+    "n_stops": 3,
+    "n_takes": 4,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "49799116ba18",
+    "zones": 11,
+    "price_gross": "1524.083966840122609428449290",
+    "friction": "84.0000"
+   },
+   "f2": {
+    "net_pnl": "-963.2508878612268154734450540",
+    "annualized_pct": "-31.67446613237367456286553556",
+    "rounds": 10,
+    "events": 59,
+    "flat_fold": 0,
+    "n_stops": 7,
+    "n_takes": 3,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "5b0140cd97a9",
+    "zones": 23,
+    "price_gross": "-843.2508878612268154734450540",
+    "friction": "120.0000"
+   },
+   "f3": {
+    "net_pnl": "2472.227181878034312391142600",
+    "annualized_pct": "81.29395688157500216421324766",
+    "rounds": 10,
+    "events": 39,
+    "flat_fold": 0,
+    "n_stops": 5,
+    "n_takes": 5,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "0c5a44fc2889",
+    "zones": 31,
+    "price_gross": "2592.227181878034312391142600",
+    "friction": "120.0000"
+   }
+  },
+  "pooled_net": "2949.060260856930106346146836",
+  "pooled_ann": "32.32453439077415882331362147",
+  "daily_sum_check": "2949.06026085693",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -19.308827772149655,
+   "upper_97.5pct": 92.22657844623461,
+   "mean_replicates": 34.437070263202656
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": true,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": true,
+   "ALL": false
+  }
+ },
+ "E-b1": {
+  "folds": {
+   "f1": {
+    "net_pnl": "-77.9629735266657964985971770",
+    "annualized_pct": "-2.563647327678650065043961225",
+    "rounds": 27,
+    "events": 40,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 27,
+    "n_forced": 0,
+    "deviation_version": "afa8746725e5",
+    "zones": 11,
+    "price_gross": "246.0370264733342035014028230",
+    "friction": "324.0000"
+   },
+   "f2": {
+    "net_pnl": "-2543.907015397075149128131306",
+    "annualized_pct": "-83.65099645224616481367278619",
+    "rounds": 30,
+    "events": 59,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 30,
+    "n_forced": 0,
+    "deviation_version": "6f4fd8f00369",
+    "zones": 23,
+    "price_gross": "-2183.907015397075149128131306",
+    "friction": "360.0000"
+   },
+   "f3": {
+    "net_pnl": "2911.863928560037889200210192",
+    "annualized_pct": "95.75048053373097563586276757",
+    "rounds": 22,
+    "events": 39,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 22,
+    "n_forced": 0,
+    "deviation_version": "f571a8d6ef4f",
+    "zones": 31,
+    "price_gross": "3175.863928560037889200210192",
+    "friction": "264.0000"
+   }
+  },
+  "pooled_net": "289.993939636296943573481709",
+  "pooled_ann": "3.178612251268720252382006721",
+  "daily_sum_check": "289.99393963629694",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -98.3787484594142,
+   "upper_97.5pct": 101.40217282178824,
+   "mean_replicates": -1.8741279897298146
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": true,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": false,
+   "ALL": false
+  }
+ },
+ "E-b2": {
+  "folds": {
+   "f1": {
+    "net_pnl": "-1535.860333017143944099098863",
+    "annualized_pct": "-50.50351545506824681046586351",
+    "rounds": 27,
+    "events": 40,
+    "flat_fold": 0,
+    "n_stops": 19,
+    "n_takes": 8,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "327ebb855c1b",
+    "zones": 11,
+    "price_gross": "-1211.860333017143944099098863",
+    "friction": "324.0000"
+   },
+   "f2": {
+    "net_pnl": "-1036.029582004068040604909495",
+    "annualized_pct": "-34.06763940824187701088215907",
+    "rounds": 30,
+    "events": 59,
+    "flat_fold": 0,
+    "n_stops": 21,
+    "n_takes": 9,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "b4ae12b0a66c",
+    "zones": 23,
+    "price_gross": "-676.0295820040680406049094950",
+    "friction": "360.0000"
+   },
+   "f3": {
+    "net_pnl": "2436.189128006666150386457734",
+    "annualized_pct": "80.10892177679577881901415071",
+    "rounds": 22,
+    "events": 39,
+    "flat_fold": 0,
+    "n_stops": 11,
+    "n_takes": 11,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "219d4f00955e",
+    "zones": 31,
+    "price_gross": "2700.189128006666150386457734",
+    "friction": "264.0000"
+   }
+  },
+  "pooled_net": "-135.700787014545834317550624",
+  "pooled_ann": "-1.487411028838115000777957290",
+  "daily_sum_check": "-135.70078701454577",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -54.465742095700044,
+   "upper_97.5pct": 58.28131710112111,
+   "mean_replicates": -1.9788077418103285
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": false,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": false,
+   "ALL": false
+  }
+ },
+ "E-b3": {
+  "folds": {
+   "f1": {
+    "net_pnl": "1431.283182912232306843865391",
+    "annualized_pct": "47.06471727594277405387485295",
+    "rounds": 13,
+    "events": 40,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 13,
+    "n_forced": 0,
+    "deviation_version": "df91272b0199",
+    "zones": 11,
+    "price_gross": "1587.283182912232306843865391",
+    "friction": "156.0000"
+   },
+   "f2": {
+    "net_pnl": "803.2003027629195867802928730",
+    "annualized_pct": "26.41154148724915758331593681",
+    "rounds": 17,
+    "events": 59,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 17,
+    "n_forced": 0,
+    "deviation_version": "32294c77a29c",
+    "zones": 23,
+    "price_gross": "1007.200302762919586780292873",
+    "friction": "204.0000"
+   },
+   "f3": {
+    "net_pnl": "1454.601176683064116879737505",
+    "annualized_pct": "47.83148013417282906856794498",
+    "rounds": 13,
+    "events": 39,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 13,
+    "n_forced": 0,
+    "deviation_version": "dd6db85e4bab",
+    "zones": 31,
+    "price_gross": "1610.601176683064116879737505",
+    "friction": "156.0000"
+   }
+  },
+  "pooled_net": "3689.084662358216010503895769",
+  "pooled_ann": "40.43591296578825356858624492",
+  "daily_sum_check": "3689.084662358216",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -16.300571400432524,
+   "upper_97.5pct": 97.24026823928239,
+   "mean_replicates": 38.93778347223769
+  },
+  "gates": {
+   "E2-1": true,
+   "E2-2": true,
+   "E2-3": true,
+   "E2-4": false,
+   "E2-5": true,
+   "ALL": false
+  }
+ },
+ "E-b4": {
+  "folds": {
+   "f1": {
+    "net_pnl": "110.2884663005188430249316170",
+    "annualized_pct": "3.626602720692736730099102721",
+    "rounds": 13,
+    "events": 40,
+    "flat_fold": 0,
+    "n_stops": 9,
+    "n_takes": 4,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "61b3c4badfcb",
+    "zones": 11,
+    "price_gross": "266.2884663005188430249316170",
+    "friction": "156.0000"
+   },
+   "f2": {
+    "net_pnl": "-1988.731614511655454016446754",
+    "annualized_pct": "-65.39522876547335501945973560",
+    "rounds": 17,
+    "events": 59,
+    "flat_fold": 0,
+    "n_stops": 13,
+    "n_takes": 4,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "13c80eaa7e46",
+    "zones": 23,
+    "price_gross": "-1784.731614511655454016446754",
+    "friction": "204.0000"
+   },
+   "f3": {
+    "net_pnl": "1847.109571506303193372974137",
+    "annualized_pct": "60.73828771169375365595815856",
+    "rounds": 13,
+    "events": 39,
+    "flat_fold": 0,
+    "n_stops": 7,
+    "n_takes": 6,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "c051a627be27",
+    "zones": 31,
+    "price_gross": "2003.109571506303193372974137",
+    "friction": "156.0000"
+   }
+  },
+  "pooled_net": "-31.333576704833417618541000",
+  "pooled_ann": "-0.3434461110289548778008247748",
+  "daily_sum_check": "-31.333576704833277",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -59.059924558772664,
+   "upper_97.5pct": 55.49791675014356,
+   "mean_replicates": -0.16829845077192057
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": false,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": true,
+   "ALL": false
+  }
+ },
+ "E-b5": {
+  "folds": {
+   "f1": {
+    "net_pnl": "652.9341418104515831994803360",
+    "annualized_pct": "21.47035691538872323133426330",
+    "rounds": 11,
+    "events": 40,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 11,
+    "n_forced": 0,
+    "deviation_version": "241fd9c4008b",
+    "zones": 11,
+    "price_gross": "784.9341418104515831994803360",
+    "friction": "132.0000"
+   },
+   "f2": {
+    "net_pnl": "855.1879289874633180855019540",
+    "annualized_pct": "28.12104451174991991902776695",
+    "rounds": 14,
+    "events": 59,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 14,
+    "n_forced": 0,
+    "deviation_version": "b7b889387e3d",
+    "zones": 23,
+    "price_gross": "1023.187928987463318085501954",
+    "friction": "168.0000"
+   },
+   "f3": {
+    "net_pnl": "3001.224201990232623198352326",
+    "annualized_pct": "98.68890393931846013219807198",
+    "rounds": 10,
+    "events": 39,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 10,
+    "n_forced": 0,
+    "deviation_version": "3236e2983648",
+    "zones": 31,
+    "price_gross": "3121.224201990232623198352326",
+    "friction": "120.0000"
+   }
+  },
+  "pooled_net": "4509.346272788147524483334616",
+  "pooled_ann": "49.42676845548570109418670075",
+  "daily_sum_check": "4509.346272788148",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": 2.935083067711364,
+   "upper_97.5pct": 94.484936000713,
+   "mean_replicates": 48.1306848753858
+  },
+  "gates": {
+   "E2-1": true,
+   "E2-2": true,
+   "E2-3": true,
+   "E2-4": true,
+   "E2-5": true,
+   "ALL": true
+  }
+ },
+ "E-b6": {
+  "folds": {
+   "f1": {
+    "net_pnl": "281.2182535795165008035383650",
+    "annualized_pct": "9.247266896984101152548784072",
+    "rounds": 11,
+    "events": 40,
+    "flat_fold": 0,
+    "n_stops": 7,
+    "n_takes": 4,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "af47cb92c455",
+    "zones": 11,
+    "price_gross": "413.2182535795165008035383650",
+    "friction": "132.0000"
+   },
+   "f2": {
+    "net_pnl": "-1586.202515017086670631798617",
+    "annualized_pct": "-52.15891152984113826852310768",
+    "rounds": 14,
+    "events": 59,
+    "flat_fold": 0,
+    "n_stops": 10,
+    "n_takes": 4,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "f453b38d9ed1",
+    "zones": 23,
+    "price_gross": "-1418.202515017086670631798617",
+    "friction": "168.0000"
+   },
+   "f3": {
+    "net_pnl": "2063.833975424208875283169707",
+    "annualized_pct": "67.86481090358885040345558046",
+    "rounds": 10,
+    "events": 39,
+    "flat_fold": 0,
+    "n_stops": 4,
+    "n_takes": 6,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "46a90e0e4cc7",
+    "zones": 31,
+    "price_gross": "2183.833975424208875283169707",
+    "friction": "120.0000"
+   }
+  },
+  "pooled_net": "758.849713986638705454909455",
+  "pooled_ann": "8.317722090243937762493752285",
+  "daily_sum_check": "758.8497139866388",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -47.56615542201778,
+   "upper_97.5pct": 62.341625439584554,
+   "mean_replicates": 8.736939376473899
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": true,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": true,
+   "ALL": false
+  }
+ },
+ "E-c1": {
+  "folds": {
+   "f1": {
+    "net_pnl": "-763.0723123562554955213084220",
+    "annualized_pct": "-25.09201747838137440227725892",
+    "rounds": 18,
+    "events": 36,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 18,
+    "n_forced": 0,
+    "deviation_version": "9aef72096f73",
+    "zones": 12,
+    "price_gross": "-547.0723123562554955213084220",
+    "friction": "216.0000"
+   },
+   "f2": {
+    "net_pnl": "-359.4405543874202328974731700",
+    "annualized_pct": "-11.81944165328003468536736099",
+    "rounds": 16,
+    "events": 38,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 16,
+    "n_forced": 0,
+    "deviation_version": "3f4e888e8fba",
+    "zones": 14,
+    "price_gross": "-167.4405543874202328974731700",
+    "friction": "192.0000"
+   },
+   "f3": {
+    "net_pnl": "642.7611033247163139521108620",
+    "annualized_pct": "21.13583808229923014347031213",
+    "rounds": 27,
+    "events": 54,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 27,
+    "n_forced": 0,
+    "deviation_version": "3370baf91781",
+    "zones": 18,
+    "price_gross": "966.7611033247163139521108620",
+    "friction": "324.0000"
+   }
+  },
+  "pooled_net": "-479.7517634189594144666707300",
+  "pooled_ann": "-5.258540349787392981391435928",
+  "daily_sum_check": "-479.7517634189591",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -55.05220436203263,
+   "upper_97.5pct": 34.09319831214001,
+   "mean_replicates": -8.452318869156873
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": false,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": false,
+   "ALL": false
+  }
+ },
+ "E-c2": {
+  "folds": {
+   "f1": {
+    "net_pnl": "-125.6192076974294108402277860",
+    "annualized_pct": "-4.130721694555111257358841612",
+    "rounds": 18,
+    "events": 36,
+    "flat_fold": 0,
+    "n_stops": 11,
+    "n_takes": 7,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "16ea32e4d080",
+    "zones": 12,
+    "price_gross": "90.3807923025705891597722140",
+    "friction": "216.0000"
+   },
+   "f2": {
+    "net_pnl": "-272.7768688587688546888923180",
+    "annualized_pct": "-8.969689831842399275805918565",
+    "rounds": 16,
+    "events": 38,
+    "flat_fold": 0,
+    "n_stops": 10,
+    "n_takes": 6,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "cd4521a54737",
+    "zones": 14,
+    "price_gross": "-80.7768688587688546888923180",
+    "friction": "192.0000"
+   },
+   "f3": {
+    "net_pnl": "-1037.431963317980376188340903",
+    "annualized_pct": "-34.11375374874439975754454321",
+    "rounds": 27,
+    "events": 54,
+    "flat_fold": 0,
+    "n_stops": 17,
+    "n_takes": 10,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "2f8a7b9a2d87",
+    "zones": 18,
+    "price_gross": "-713.4319633179803761883409030",
+    "friction": "324.0000"
+   }
+  },
+  "pooled_net": "-1435.828039874178641717461007",
+  "pooled_ann": "-15.73805509171397009690310113",
+  "daily_sum_check": "-1435.8280398741786",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -51.426824282323494,
+   "upper_97.5pct": 9.74142440026986,
+   "mean_replicates": -18.32313944303642
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": false,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": false,
+   "ALL": false
+  }
+ },
+ "E-c3": {
+  "folds": {
+   "f1": {
+    "net_pnl": "200.3763983877846731635217690",
+    "annualized_pct": "6.588953640679405919341031142",
+    "rounds": 8,
+    "events": 36,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 8,
+    "n_forced": 0,
+    "deviation_version": "41f84b52d309",
+    "zones": 12,
+    "price_gross": "296.3763983877846731635217690",
+    "friction": "96.0000"
+   },
+   "f2": {
+    "net_pnl": "-855.7893491129497531303117250",
+    "annualized_pct": "-28.14082093929969908942016032",
+    "rounds": 8,
+    "events": 38,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 8,
+    "n_forced": 0,
+    "deviation_version": "44e67233bbd3",
+    "zones": 14,
+    "price_gross": "-759.7893491129497531303117250",
+    "friction": "96.0000"
+   },
+   "f3": {
+    "net_pnl": "1682.357594491563797798570190",
+    "annualized_pct": "55.32076774679466542310613688",
+    "rounds": 13,
+    "events": 54,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 13,
+    "n_forced": 0,
+    "deviation_version": "f285d86624fb",
+    "zones": 18,
+    "price_gross": "1838.357594491563797798570190",
+    "friction": "156.0000"
+   }
+  },
+  "pooled_net": "1026.944643766398717831780234",
+  "pooled_ann": "11.25630014939145741767566923",
+  "daily_sum_check": "1026.9446437663987",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -18.56367296477291,
+   "upper_97.5pct": 38.085010591449496,
+   "mean_replicates": 8.08099578139939
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": true,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": true,
+   "ALL": false
+  }
+ },
+ "E-c4": {
+  "folds": {
+   "f1": {
+    "net_pnl": "-273.7442107884695744015732290",
+    "annualized_pct": "-9.001498823224449969060741314",
+    "rounds": 8,
+    "events": 36,
+    "flat_fold": 0,
+    "n_stops": 6,
+    "n_takes": 2,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "5344b9a5ee09",
+    "zones": 12,
+    "price_gross": "-177.7442107884695744015732290",
+    "friction": "96.0000"
+   },
+   "f2": {
+    "net_pnl": "-149.6960069968128782060796770",
+    "annualized_pct": "-4.922436266111414463533250640",
+    "rounds": 8,
+    "events": 38,
+    "flat_fold": 0,
+    "n_stops": 5,
+    "n_takes": 3,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "7ea02d39bc69",
+    "zones": 14,
+    "price_gross": "-53.6960069968128782060796770",
+    "friction": "96.0000"
+   },
+   "f3": {
+    "net_pnl": "669.4854735475531788296596910",
+    "annualized_pct": "22.01461241845557750205637723",
+    "rounds": 13,
+    "events": 54,
+    "flat_fold": 0,
+    "n_stops": 6,
+    "n_takes": 7,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "05e3b381d6da",
+    "zones": 18,
+    "price_gross": "825.4854735475531788296596910",
+    "friction": "156.0000"
+   }
+  },
+  "pooled_net": "246.0452557622707262220067850",
+  "pooled_ann": "2.696892443039904356487461757",
+  "daily_sum_check": "246.0452557622708",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -24.72157222574747,
+   "upper_97.5pct": 20.33455241252142,
+   "mean_replicates": -2.0608711249992844
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": false,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": true,
+   "ALL": false
+  }
+ },
+ "E-c5": {
+  "folds": {
+   "f1": {
+    "net_pnl": "134.9440185659871626933378690",
+    "annualized_pct": "4.437348358250929223699848845",
+    "rounds": 7,
+    "events": 36,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 7,
+    "n_forced": 0,
+    "deviation_version": "d018660b6433",
+    "zones": 12,
+    "price_gross": "218.9440185659871626933378690",
+    "friction": "84.0000"
+   },
+   "f2": {
+    "net_pnl": "-1213.562387372267751959712578",
+    "annualized_pct": "-39.90542985503402968155811631",
+    "rounds": 6,
+    "events": 38,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 6,
+    "n_forced": 0,
+    "deviation_version": "8aef9665fcbe",
+    "zones": 14,
+    "price_gross": "-1141.562387372267751959712578",
+    "friction": "72.0000"
+   },
+   "f3": {
+    "net_pnl": "1641.135660098814484028732015",
+    "annualized_pct": "53.96527170595200780815199869",
+    "rounds": 11,
+    "events": 54,
+    "flat_fold": 0,
+    "n_stops": 0,
+    "n_takes": 0,
+    "n_tb": 11,
+    "n_forced": 0,
+    "deviation_version": "548256e92d6e",
+    "zones": 18,
+    "price_gross": "1773.135660098814484028732015",
+    "friction": "132.0000"
+   }
+  },
+  "pooled_net": "562.517291292533894762357306",
+  "pooled_ann": "6.165730069722969116764577078",
+  "daily_sum_check": "562.5172912925339",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -27.267977355209208,
+   "upper_97.5pct": 37.13273407576916,
+   "mean_replicates": 2.549861261448606
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": true,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": true,
+   "ALL": false
+  }
+ },
+ "E-c6": {
+  "folds": {
+   "f1": {
+    "net_pnl": "-245.9971052851429125121823630",
+    "annualized_pct": "-8.089094002619564240265456081",
+    "rounds": 7,
+    "events": 36,
+    "flat_fold": 0,
+    "n_stops": 5,
+    "n_takes": 2,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "bb84c91ffd43",
+    "zones": 12,
+    "price_gross": "-161.9971052851429125121823630",
+    "friction": "84.0000"
+   },
+   "f2": {
+    "net_pnl": "-105.9833445435227848797015070",
+    "annualized_pct": "-3.485037906160884367665860366",
+    "rounds": 6,
+    "events": 38,
+    "flat_fold": 0,
+    "n_stops": 4,
+    "n_takes": 2,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "e0f3c762e07a",
+    "zones": 14,
+    "price_gross": "-33.9833445435227848797015070",
+    "friction": "72.0000"
+   },
+   "f3": {
+    "net_pnl": "597.4305053844930305267668910",
+    "annualized_pct": "19.64523733921981586867296533",
+    "rounds": 11,
+    "events": 54,
+    "flat_fold": 0,
+    "n_stops": 5,
+    "n_takes": 6,
+    "n_tb": 0,
+    "n_forced": 0,
+    "deviation_version": "e6df8c8e7e7b",
+    "zones": 18,
+    "price_gross": "729.4305053844930305267668910",
+    "friction": "132.0000"
+   }
+  },
+  "pooled_net": "245.4500555558273331348830210",
+  "pooled_ann": "2.690368476813122420247216296",
+  "daily_sum_check": "245.45005555582742",
+  "bootstrap": {
+   "reps": 1000,
+   "seed": 42,
+   "block_days": 30,
+   "start_uniform": "0..322 inclusive (randrange(323))",
+   "wrap": "circular",
+   "statistic": "mean(daily)*365/10000*100",
+   "lower_2.5pct": -23.866102202779906,
+   "upper_97.5pct": 18.705600742085334,
+   "mean_replicates": -2.2089505239411746
+  },
+  "gates": {
+   "E2-1": false,
+   "E2-2": false,
+   "E2-3": false,
+   "E2-4": false,
+   "E2-5": true,
+   "ALL": false
+  }
+ }
+}
