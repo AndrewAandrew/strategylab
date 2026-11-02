@@ -99,6 +99,9 @@ def test_cli_artifacts_and_cash_flow(tmp_path: Path, grid: ModuleType, capsys) -
     ]
     csv_text = (out / "carry_BTCUSDT_0_600.csv").read_text(encoding="utf-8")
     assert csv_text.splitlines()[0] == "strategy: carry_funding"
+    # конвенция серии A: LF без CR (harness.write_csv newline="")
+    for name in files:
+        assert b"\r" not in (out / name).read_bytes()
     assert "fork,carry_version,symbol" in csv_text
     data_row = csv_text.splitlines()[-1].split(",")
     assert data_row[0] == "pessimistic"
@@ -154,6 +157,18 @@ def test_cli_holdout_guard(tmp_path: Path, grid: ModuleType, capsys) -> None:
         grid.main(argv)
     assert exc.value.code == 2
     assert "HOLDOUT_GUARD" in capsys.readouterr().out
+    assert not out.exists()
+
+
+def test_cli_window_guard_degenerate(tmp_path: Path, grid: ModuleType, capsys) -> None:
+    db = make_db(tmp_path)
+    out = tmp_path / "cell"
+    argv = _argv(db, out)
+    argv[argv.index("--start") + 1] = "600"  # start == end
+    with pytest.raises(SystemExit) as exc:
+        grid.main(argv)
+    assert exc.value.code == 2
+    assert "WINDOW_GUARD" in capsys.readouterr().out
     assert not out.exists()
 
 

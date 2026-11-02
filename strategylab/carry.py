@@ -172,7 +172,10 @@ def run_carry(
                         exit_ref=b.open,
                         qty=n0 / b.open,
                     )
-        elif s.rate < params.theta_exit:
+        elif s.rate < params.theta_exit and s.ts >= open_hold.entry_ts:
+            # «holding» считается с филла входа: такт между решением о входе и
+            # самим филлом (достижим только при дыре в 1m-данных >= 8h) позицию
+            # не закрывает — держания ещё нет
             b = first_bar_after(s.ts)
             if b is not None:
                 holds.append(

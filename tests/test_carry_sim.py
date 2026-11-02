@@ -193,6 +193,20 @@ def test_negative_funding_while_holding() -> None:
     assert res.funding_gross < 0
 
 
+def test_exit_not_fired_before_entry_fill() -> None:
+    """«holding» — с филла, не с решения: при дыре в барах >= 8h low-такт между
+    решением о входе и самим филлом держание не закрывает (минор ревью свежими
+    глазами); держание живёт до принудительного выхода на последнем баре."""
+    bars = [bar(0, "100"), bar(300, "100"), bar(400, "100")]
+    settles = [
+        FundingSettle(0, Decimal("0.001")),  # вход -> филл на баре 300
+        FundingSettle(100, Decimal("0.0000001")),  # < theta_exit, но филла нет — мимо
+    ]
+    res = run_carry(bars, settles, P, end_ts=401)
+    assert res.holds == 1
+    assert [(r.ts, r.kind) for r in res.journal] == [(300, "entry"), (400, "exit")]
+
+
 def test_validation() -> None:
     bars = [bar(0, "100")]
     ok = CarryParams(theta_entry=Decimal("0.0001"), theta_exit=Decimal("0.00005"))

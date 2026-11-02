@@ -112,9 +112,19 @@ def _journal_value(value: Decimal | None) -> str:
     return "" if value is None else format(value, "f")
 
 
+def _write_text(path: Path, lines: Sequence[str]) -> None:
+    """UTF-8 без BOM, LF — конвенция серии A (harness.write_csv)."""
+    with open(path, "w", encoding="utf-8", newline="") as stream:
+        for line in lines:
+            stream.write(line + "\n")
+
+
 def run(args: argparse.Namespace) -> int:
     if args.end > HOLDOUT_FLOOR:
         print(f"HOLDOUT_GUARD: end_ts {args.end} > {HOLDOUT_FLOOR} — отказ (R-next-2)")
+        return 2
+    if args.end <= args.start:
+        print(f"WINDOW_GUARD: end {args.end} <= start {args.start} — пустое/инверсное окно")
         return 2
     params = CarryParams(
         theta_entry=args.theta_entry,
@@ -189,7 +199,7 @@ def run(args: argparse.Namespace) -> int:
             )
         ),
     ]
-    (out_dir / f"{stem}.csv").write_text("\n".join(csv_rows) + "\n", encoding="utf-8")
+    _write_text(out_dir / f"{stem}.csv", csv_rows)
 
     journal = [_JOURNAL_HEADER]
     journal += [
@@ -208,7 +218,7 @@ def run(args: argparse.Namespace) -> int:
         )
         for r in result.journal
     ]
-    (out_dir / f"{stem}_journal_p.csv").write_text("\n".join(journal) + "\n", encoding="utf-8")
+    _write_text(out_dir / f"{stem}_journal_p.csv", journal)
 
     report = [
         f"# cell: {args.symbol} [{args.start}, {args.end}) carry_version={version}",
@@ -229,7 +239,7 @@ def run(args: argparse.Namespace) -> int:
         f"flat_fold (ноль засчитанных): {int(result.flat_fold)}",
         "# инвариант: equity == capital + net; net == funding_gross - friction",
     ]
-    (out_dir / f"{stem}_report_p.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+    _write_text(out_dir / f"{stem}_report_p.txt", report)
 
     print(f"carry_version: {version}")
     print(
