@@ -1,0 +1,386 @@
+===== E-a1 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1761523200 --end 1771113600 --cell E-a1 --tol 0.020 --depth 0.003 --conf 0 --vol-filter 2 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-a1_f1
+exit=0 seconds=3.438
+--- stdout ---
+deviation_version: 16e4e7ae2e55
+net_pnl: 1170.074791299000638723400290 annualized_pct: 38.47543232649866965171541494 rounds: 14 events: 40 flat_fold: 0
+артефакты: data\calib\dev_E-a1_f1\dev_E-a1_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-a1 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-a1 --tol 0.020 --depth 0.003 --conf 0 --vol-filter 2 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-a1_f2
+exit=0 seconds=4.684
+--- stdout ---
+deviation_version: 0fb2ff14c2ba
+net_pnl: 1043.881548534257639597424431 annualized_pct: 34.32583470405441787865404660 rounds: 18 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-a1_f2\dev_E-a1_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-a1 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1780704000 --end 1790294400 --cell E-a1 --tol 0.020 --depth 0.003 --conf 0 --vol-filter 2 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-a1_f3
+exit=0 seconds=4.641
+--- stdout ---
+deviation_version: 633534fdc0ee
+net_pnl: 1824.947319677186136744318079 annualized_pct: 60.00952898037594053258343232 rounds: 14 events: 39 flat_fold: 0
+артефакты: data\calib\dev_E-a1_f3\dev_E-a1_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-a2 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1761523200 --end 1771113600 --cell E-a2 --tol 0.020 --depth 0.003 --conf 0 --vol-filter 2 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-a2_f1
+exit=0 seconds=3.404
+--- stdout ---
+deviation_version: f2062d48042b
+net_pnl: -859.2224197969815604335586940 annualized_pct: -28.25371020053137563587828138 rounds: 14 events: 40 flat_fold: 0
+артефакты: data\calib\dev_E-a2_f1\dev_E-a2_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-a2 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-a2 --tol 0.020 --depth 0.003 --conf 0 --vol-filter 2 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-a2_f2
+exit=0 seconds=4.663
+--- stdout ---
+deviation_version: b2fae4a67e0b
+net_pnl: -255.6864446616894622729057360 annualized_pct: -8.407707414551049885550503932 rounds: 18 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-a2_f2\dev_E-a2_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-a2 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1780704000 --end 1790294400 --cell E-a2 --tol 0.020 --depth 0.003 --conf 0 --vol-filter 2 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-a2_f3
+exit=0 seconds=4.651
+--- stdout ---
+deviation_version: dc4fcdd0e599
+net_pnl: 1796.053558392090282035871410 annualized_pct: 59.05941881199215792280117699 rounds: 14 events: 39 flat_fold: 0
+артефакты: data\calib\dev_E-a2_f3\dev_E-a2_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-a3 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1761523200 --end 1771113600 --cell E-a3 --tol 0.020 --depth 0.003 --conf 30 --vol-filter 2 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-a3_f1
+exit=0 seconds=3.432
+--- stdout ---
+deviation_version: 88d50bad1497
+net_pnl: 2034.961627900111762775168025 annualized_pct: 66.91540488140007147864291253 rounds: 8 events: 40 flat_fold: 0
+артефакты: data\calib\dev_E-a3_f1\dev_E-a3_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-a3 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-a3 --tol 0.020 --depth 0.003 --conf 30 --vol-filter 2 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-a3_f2
+exit=0 seconds=4.695
+--- stdout ---
+deviation_version: 7c45f7e44017
+net_pnl: 1526.146944057984230238855400 annualized_pct: 50.18411122352831027362001991 rounds: 12 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-a3_f2\dev_E-a3_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-a3 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1780704000 --end 1790294400 --cell E-a3 --tol 0.020 --depth 0.003 --conf 30 --vol-filter 2 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-a3_f3
+exit=0 seconds=4.583
+--- stdout ---
+deviation_version: a1d927459f5c
+net_pnl: 1918.316939025925664650519773 annualized_pct: 63.07979123823989798175132586 rounds: 12 events: 39 flat_fold: 0
+артефакты: data\calib\dev_E-a3_f3\dev_E-a3_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-a4 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1761523200 --end 1771113600 --cell E-a4 --tol 0.020 --depth 0.003 --conf 30 --vol-filter 2 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-a4_f1
+exit=0 seconds=3.375
+--- stdout ---
+deviation_version: 8143cf48dbbc
+net_pnl: 1359.666979545932627731606270 annualized_pct: 44.70977004813201883982308906 rounds: 8 events: 40 flat_fold: 0
+артефакты: data\calib\dev_E-a4_f1\dev_E-a4_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-a4 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-a4 --tol 0.020 --depth 0.003 --conf 30 --vol-filter 2 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-a4_f2
+exit=0 seconds=4.576
+--- stdout ---
+deviation_version: d00874944c8c
+net_pnl: -1221.302098905621133268573111 annualized_pct: -40.15993388293258681468731401 rounds: 12 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-a4_f2\dev_E-a4_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-a4 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1780704000 --end 1790294400 --cell E-a4 --tol 0.020 --depth 0.003 --conf 30 --vol-filter 2 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-a4_f3
+exit=0 seconds=4.772
+--- stdout ---
+deviation_version: d41b8189ba8a
+net_pnl: 2346.291616713858218438283360 annualized_pct: 77.15283244149173420990751589 rounds: 12 events: 39 flat_fold: 0
+артефакты: data\calib\dev_E-a4_f3\dev_E-a4_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-a5 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1761523200 --end 1771113600 --cell E-a5 --tol 0.020 --depth 0.003 --conf 60 --vol-filter 2 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-a5_f1
+exit=0 seconds=3.407
+--- stdout ---
+deviation_version: cadf3ac73bc3
+net_pnl: 1450.013312308234901974879280 annualized_pct: 47.68061792725276929917395831 rounds: 7 events: 40 flat_fold: 0
+артефакты: data\calib\dev_E-a5_f1\dev_E-a5_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-a5 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-a5 --tol 0.020 --depth 0.003 --conf 60 --vol-filter 2 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-a5_f2
+exit=0 seconds=4.608
+--- stdout ---
+deviation_version: 68f11b778d1d
+net_pnl: 1223.858747050001339489973431 annualized_pct: 40.24400384443698098322885606 rounds: 10 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-a5_f2\dev_E-a5_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-a5 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1780704000 --end 1790294400 --cell E-a5 --tol 0.020 --depth 0.003 --conf 60 --vol-filter 2 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-a5_f3
+exit=0 seconds=4.578
+--- stdout ---
+deviation_version: 129af07c36b9
+net_pnl: 3041.436793714294869704795824 annualized_pct: 100.0112098833979844542567996 rounds: 10 events: 39 flat_fold: 0
+артефакты: data\calib\dev_E-a5_f3\dev_E-a5_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-a6 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1761523200 --end 1771113600 --cell E-a6 --tol 0.020 --depth 0.003 --conf 60 --vol-filter 2 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-a6_f1
+exit=0 seconds=3.362
+--- stdout ---
+deviation_version: 49799116ba18
+net_pnl: 1440.083966840122609428449290 annualized_pct: 47.35411242312114886859315232 rounds: 7 events: 40 flat_fold: 0
+артефакты: data\calib\dev_E-a6_f1\dev_E-a6_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-a6 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-a6 --tol 0.020 --depth 0.003 --conf 60 --vol-filter 2 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-a6_f2
+exit=0 seconds=4.583
+--- stdout ---
+deviation_version: 5b0140cd97a9
+net_pnl: -963.2508878612268154734450540 annualized_pct: -31.67446613237367456286553556 rounds: 10 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-a6_f2\dev_E-a6_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-a6 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1780704000 --end 1790294400 --cell E-a6 --tol 0.020 --depth 0.003 --conf 60 --vol-filter 2 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-a6_f3
+exit=0 seconds=4.61
+--- stdout ---
+deviation_version: 0c5a44fc2889
+net_pnl: 2472.227181878034312391142600 annualized_pct: 81.29395688157500216421324766 rounds: 10 events: 39 flat_fold: 0
+артефакты: data\calib\dev_E-a6_f3\dev_E-a6_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-b1 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1761523200 --end 1771113600 --cell E-b1 --tol 0.020 --depth 0.005 --conf 0 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-b1_f1
+exit=0 seconds=3.394
+--- stdout ---
+deviation_version: afa8746725e5
+net_pnl: -77.9629735266657964985971770 annualized_pct: -2.563647327678650065043961225 rounds: 27 events: 40 flat_fold: 0
+артефакты: data\calib\dev_E-b1_f1\dev_E-b1_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-b1 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-b1 --tol 0.020 --depth 0.005 --conf 0 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-b1_f2
+exit=0 seconds=4.575
+--- stdout ---
+deviation_version: 6f4fd8f00369
+net_pnl: -2543.907015397075149128131306 annualized_pct: -83.65099645224616481367278619 rounds: 30 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-b1_f2\dev_E-b1_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-b1 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1780704000 --end 1790294400 --cell E-b1 --tol 0.020 --depth 0.005 --conf 0 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-b1_f3
+exit=0 seconds=4.594
+--- stdout ---
+deviation_version: f571a8d6ef4f
+net_pnl: 2911.863928560037889200210192 annualized_pct: 95.75048053373097563586276757 rounds: 22 events: 39 flat_fold: 0
+артефакты: data\calib\dev_E-b1_f3\dev_E-b1_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-b2 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1761523200 --end 1771113600 --cell E-b2 --tol 0.020 --depth 0.005 --conf 0 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-b2_f1
+exit=0 seconds=3.402
+--- stdout ---
+deviation_version: 327ebb855c1b
+net_pnl: -1535.860333017143944099098863 annualized_pct: -50.50351545506824681046586351 rounds: 27 events: 40 flat_fold: 0
+артефакты: data\calib\dev_E-b2_f1\dev_E-b2_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-b2 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-b2 --tol 0.020 --depth 0.005 --conf 0 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-b2_f2
+exit=0 seconds=4.631
+--- stdout ---
+deviation_version: b4ae12b0a66c
+net_pnl: -1036.029582004068040604909495 annualized_pct: -34.06763940824187701088215907 rounds: 30 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-b2_f2\dev_E-b2_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-b2 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1780704000 --end 1790294400 --cell E-b2 --tol 0.020 --depth 0.005 --conf 0 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-b2_f3
+exit=0 seconds=4.662
+--- stdout ---
+deviation_version: 219d4f00955e
+net_pnl: 2436.189128006666150386457734 annualized_pct: 80.10892177679577881901415071 rounds: 22 events: 39 flat_fold: 0
+артефакты: data\calib\dev_E-b2_f3\dev_E-b2_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-b3 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1761523200 --end 1771113600 --cell E-b3 --tol 0.020 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-b3_f1
+exit=0 seconds=3.462
+--- stdout ---
+deviation_version: df91272b0199
+net_pnl: 1431.283182912232306843865391 annualized_pct: 47.06471727594277405387485295 rounds: 13 events: 40 flat_fold: 0
+артефакты: data\calib\dev_E-b3_f1\dev_E-b3_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-b3 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-b3 --tol 0.020 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-b3_f2
+exit=0 seconds=4.7
+--- stdout ---
+deviation_version: 32294c77a29c
+net_pnl: 803.2003027629195867802928730 annualized_pct: 26.41154148724915758331593681 rounds: 17 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-b3_f2\dev_E-b3_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-b3 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1780704000 --end 1790294400 --cell E-b3 --tol 0.020 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-b3_f3
+exit=0 seconds=4.64
+--- stdout ---
+deviation_version: dd6db85e4bab
+net_pnl: 1454.601176683064116879737505 annualized_pct: 47.83148013417282906856794498 rounds: 13 events: 39 flat_fold: 0
+артефакты: data\calib\dev_E-b3_f3\dev_E-b3_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-b4 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1761523200 --end 1771113600 --cell E-b4 --tol 0.020 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-b4_f1
+exit=0 seconds=3.434
+--- stdout ---
+deviation_version: 61b3c4badfcb
+net_pnl: 110.2884663005188430249316170 annualized_pct: 3.626602720692736730099102721 rounds: 13 events: 40 flat_fold: 0
+артефакты: data\calib\dev_E-b4_f1\dev_E-b4_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-b4 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-b4 --tol 0.020 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-b4_f2
+exit=0 seconds=4.669
+--- stdout ---
+deviation_version: 13c80eaa7e46
+net_pnl: -1988.731614511655454016446754 annualized_pct: -65.39522876547335501945973560 rounds: 17 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-b4_f2\dev_E-b4_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-b4 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1780704000 --end 1790294400 --cell E-b4 --tol 0.020 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-b4_f3
+exit=0 seconds=4.597
+--- stdout ---
+deviation_version: c051a627be27
+net_pnl: 1847.109571506303193372974137 annualized_pct: 60.73828771169375365595815856 rounds: 13 events: 39 flat_fold: 0
+артефакты: data\calib\dev_E-b4_f3\dev_E-b4_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-b5 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1761523200 --end 1771113600 --cell E-b5 --tol 0.020 --depth 0.005 --conf 60 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-b5_f1
+exit=0 seconds=3.383
+--- stdout ---
+deviation_version: 241fd9c4008b
+net_pnl: 652.9341418104515831994803360 annualized_pct: 21.47035691538872323133426330 rounds: 11 events: 40 flat_fold: 0
+артефакты: data\calib\dev_E-b5_f1\dev_E-b5_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-b5 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-b5 --tol 0.020 --depth 0.005 --conf 60 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-b5_f2
+exit=0 seconds=4.63
+--- stdout ---
+deviation_version: b7b889387e3d
+net_pnl: 855.1879289874633180855019540 annualized_pct: 28.12104451174991991902776695 rounds: 14 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-b5_f2\dev_E-b5_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-b5 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1780704000 --end 1790294400 --cell E-b5 --tol 0.020 --depth 0.005 --conf 60 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-b5_f3
+exit=0 seconds=4.553
+--- stdout ---
+deviation_version: 3236e2983648
+net_pnl: 3001.224201990232623198352326 annualized_pct: 98.68890393931846013219807198 rounds: 10 events: 39 flat_fold: 0
+артефакты: data\calib\dev_E-b5_f3\dev_E-b5_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-b6 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1761523200 --end 1771113600 --cell E-b6 --tol 0.020 --depth 0.005 --conf 60 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-b6_f1
+exit=0 seconds=3.359
+--- stdout ---
+deviation_version: af47cb92c455
+net_pnl: 281.2182535795165008035383650 annualized_pct: 9.247266896984101152548784072 rounds: 11 events: 40 flat_fold: 0
+артефакты: data\calib\dev_E-b6_f1\dev_E-b6_ETHUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-b6 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-b6 --tol 0.020 --depth 0.005 --conf 60 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-b6_f2
+exit=0 seconds=4.783
+--- stdout ---
+deviation_version: f453b38d9ed1
+net_pnl: -1586.202515017086670631798617 annualized_pct: -52.15891152984113826852310768 rounds: 14 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-b6_f2\dev_E-b6_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-b6 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1780704000 --end 1790294400 --cell E-b6 --tol 0.020 --depth 0.005 --conf 60 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-b6_f3
+exit=0 seconds=4.597
+--- stdout ---
+deviation_version: 46a90e0e4cc7
+net_pnl: 2063.833975424208875283169707 annualized_pct: 67.86481090358885040345558046 rounds: 10 events: 39 flat_fold: 0
+артефакты: data\calib\dev_E-b6_f3\dev_E-b6_ETHUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-c1 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1761523200 --end 1771113600 --cell E-c1 --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-c1_f1
+exit=0 seconds=3.513
+--- stdout ---
+deviation_version: 9aef72096f73
+net_pnl: -763.0723123562554955213084220 annualized_pct: -25.09201747838137440227725892 rounds: 18 events: 36 flat_fold: 0
+артефакты: data\calib\dev_E-c1_f1\dev_E-c1_BTCUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-c1 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1771113600 --end 1780704000 --cell E-c1 --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-c1_f2
+exit=0 seconds=4.607
+--- stdout ---
+deviation_version: 3f4e888e8fba
+net_pnl: -359.4405543874202328974731700 annualized_pct: -11.81944165328003468536736099 rounds: 16 events: 38 flat_fold: 0
+артефакты: data\calib\dev_E-c1_f2\dev_E-c1_BTCUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-c1 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1780704000 --end 1790294400 --cell E-c1 --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-c1_f3
+exit=0 seconds=4.663
+--- stdout ---
+deviation_version: 3370baf91781
+net_pnl: 642.7611033247163139521108620 annualized_pct: 21.13583808229923014347031213 rounds: 27 events: 54 flat_fold: 0
+артефакты: data\calib\dev_E-c1_f3\dev_E-c1_BTCUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-c2 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1761523200 --end 1771113600 --cell E-c2 --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-c2_f1
+exit=0 seconds=3.424
+--- stdout ---
+deviation_version: 16ea32e4d080
+net_pnl: -125.6192076974294108402277860 annualized_pct: -4.130721694555111257358841612 rounds: 18 events: 36 flat_fold: 0
+артефакты: data\calib\dev_E-c2_f1\dev_E-c2_BTCUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-c2 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1771113600 --end 1780704000 --cell E-c2 --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-c2_f2
+exit=0 seconds=4.677
+--- stdout ---
+deviation_version: cd4521a54737
+net_pnl: -272.7768688587688546888923180 annualized_pct: -8.969689831842399275805918565 rounds: 16 events: 38 flat_fold: 0
+артефакты: data\calib\dev_E-c2_f2\dev_E-c2_BTCUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-c2 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1780704000 --end 1790294400 --cell E-c2 --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-c2_f3
+exit=0 seconds=4.621
+--- stdout ---
+deviation_version: 2f8a7b9a2d87
+net_pnl: -1037.431963317980376188340903 annualized_pct: -34.11375374874439975754454321 rounds: 27 events: 54 flat_fold: 0
+артефакты: data\calib\dev_E-c2_f3\dev_E-c2_BTCUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-c3 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1761523200 --end 1771113600 --cell E-c3 --tol 0.010 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-c3_f1
+exit=0 seconds=3.404
+--- stdout ---
+deviation_version: 41f84b52d309
+net_pnl: 200.3763983877846731635217690 annualized_pct: 6.588953640679405919341031142 rounds: 8 events: 36 flat_fold: 0
+артефакты: data\calib\dev_E-c3_f1\dev_E-c3_BTCUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-c3 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1771113600 --end 1780704000 --cell E-c3 --tol 0.010 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-c3_f2
+exit=0 seconds=4.633
+--- stdout ---
+deviation_version: 44e67233bbd3
+net_pnl: -855.7893491129497531303117250 annualized_pct: -28.14082093929969908942016032 rounds: 8 events: 38 flat_fold: 0
+артефакты: data\calib\dev_E-c3_f2\dev_E-c3_BTCUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-c3 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1780704000 --end 1790294400 --cell E-c3 --tol 0.010 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-c3_f3
+exit=0 seconds=4.596
+--- stdout ---
+deviation_version: f285d86624fb
+net_pnl: 1682.357594491563797798570190 annualized_pct: 55.32076774679466542310613688 rounds: 13 events: 54 flat_fold: 0
+артефакты: data\calib\dev_E-c3_f3\dev_E-c3_BTCUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-c4 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1761523200 --end 1771113600 --cell E-c4 --tol 0.010 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-c4_f1
+exit=0 seconds=3.386
+--- stdout ---
+deviation_version: 5344b9a5ee09
+net_pnl: -273.7442107884695744015732290 annualized_pct: -9.001498823224449969060741314 rounds: 8 events: 36 flat_fold: 0
+артефакты: data\calib\dev_E-c4_f1\dev_E-c4_BTCUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-c4 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1771113600 --end 1780704000 --cell E-c4 --tol 0.010 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-c4_f2
+exit=0 seconds=4.605
+--- stdout ---
+deviation_version: 7ea02d39bc69
+net_pnl: -149.6960069968128782060796770 annualized_pct: -4.922436266111414463533250640 rounds: 8 events: 38 flat_fold: 0
+артефакты: data\calib\dev_E-c4_f2\dev_E-c4_BTCUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-c4 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1780704000 --end 1790294400 --cell E-c4 --tol 0.010 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-c4_f3
+exit=0 seconds=4.585
+--- stdout ---
+deviation_version: 05e3b381d6da
+net_pnl: 669.4854735475531788296596910 annualized_pct: 22.01461241845557750205637723 rounds: 13 events: 54 flat_fold: 0
+артефакты: data\calib\dev_E-c4_f3\dev_E-c4_BTCUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-c5 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1761523200 --end 1771113600 --cell E-c5 --tol 0.010 --depth 0.005 --conf 60 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-c5_f1
+exit=0 seconds=3.39
+--- stdout ---
+deviation_version: d018660b6433
+net_pnl: 134.9440185659871626933378690 annualized_pct: 4.437348358250929223699848845 rounds: 7 events: 36 flat_fold: 0
+артефакты: data\calib\dev_E-c5_f1\dev_E-c5_BTCUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-c5 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1771113600 --end 1780704000 --cell E-c5 --tol 0.010 --depth 0.005 --conf 60 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-c5_f2
+exit=0 seconds=4.544
+--- stdout ---
+deviation_version: 8aef9665fcbe
+net_pnl: -1213.562387372267751959712578 annualized_pct: -39.90542985503402968155811631 rounds: 6 events: 38 flat_fold: 0
+артефакты: data\calib\dev_E-c5_f2\dev_E-c5_BTCUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-c5 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1780704000 --end 1790294400 --cell E-c5 --tol 0.010 --depth 0.005 --conf 60 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-c5_f3
+exit=0 seconds=5.251
+--- stdout ---
+deviation_version: 548256e92d6e
+net_pnl: 1641.135660098814484028732015 annualized_pct: 53.96527170595200780815199869 rounds: 11 events: 54 flat_fold: 0
+артефакты: data\calib\dev_E-c5_f3\dev_E-c5_BTCUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-c6 f1 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1761523200 --end 1771113600 --cell E-c6 --tol 0.010 --depth 0.005 --conf 60 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-c6_f1
+exit=0 seconds=3.56
+--- stdout ---
+deviation_version: bb84c91ffd43
+net_pnl: -245.9971052851429125121823630 annualized_pct: -8.089094002619564240265456081 rounds: 7 events: 36 flat_fold: 0
+артефакты: data\calib\dev_E-c6_f1\dev_E-c6_BTCUSDT_1761523200_1771113600[.csv|_journal_p.csv|_report_p.txt]
+===== E-c6 f2 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1771113600 --end 1780704000 --cell E-c6 --tol 0.010 --depth 0.005 --conf 60 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-c6_f2
+exit=0 seconds=5.069
+--- stdout ---
+deviation_version: e0f3c762e07a
+net_pnl: -105.9833445435227848797015070 annualized_pct: -3.485037906160884367665860366 rounds: 6 events: 38 flat_fold: 0
+артефакты: data\calib\dev_E-c6_f2\dev_E-c6_BTCUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== E-c6 f3 =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/btcusdt.db --symbol BTCUSDT --start 1780704000 --end 1790294400 --cell E-c6 --tol 0.010 --depth 0.005 --conf 60 --vol-filter 1 --exit-mode V2_R2 --ctx-hours 960 --out data/calib/dev_E-c6_f3
+exit=0 seconds=4.917
+--- stdout ---
+deviation_version: e6df8c8e7e7b
+net_pnl: 597.4305053844930305267668910 annualized_pct: 19.64523733921981586867296533 rounds: 11 events: 54 flat_fold: 0
+артефакты: data\calib\dev_E-c6_f3\dev_E-c6_BTCUSDT_1780704000_1790294400[.csv|_journal_p.csv|_report_p.txt]
+===== E-b3 f2 RERUN (детерминизм-контроль) =====
+$ C:\Users\egoro\Documents\GitHub\strategylab\.venv\Scripts\python.exe C:\Users\egoro\Documents\GitHub\strategylab\scripts\deviation\grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1771113600 --end 1780704000 --cell E-b3 --tol 0.020 --depth 0.005 --conf 30 --vol-filter 1 --exit-mode V1_48 --ctx-hours 960 --out data/calib/dev_E-b3_f2_RERUN
+exit=0 seconds=5.0
+--- stdout ---
+deviation_version: 32294c77a29c
+net_pnl: 803.2003027629195867802928730 annualized_pct: 26.41154148724915758331593681 rounds: 17 events: 59 flat_fold: 0
+артефакты: data\calib\dev_E-b3_f2_RERUN\dev_E-b3_ETHUSDT_1771113600_1780704000[.csv|_journal_p.csv|_report_p.txt]
+===== детерминизм E-b3 f2: побайтное сравнение 3 файлов =====  dev_E-b3_ETHUSDT_1771113600_1780704000.csv: True  dev_E-b3_ETHUSDT_1771113600_1780704000_journal_p.csv: True  dev_E-b3_ETHUSDT_1771113600_1780704000_report_p.txt: TrueALL_EQUAL: True
