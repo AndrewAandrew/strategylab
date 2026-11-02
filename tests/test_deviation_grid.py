@@ -131,6 +131,130 @@ def test_cli_holdout_guard(tmp_path: Path, db: Path, grid: ModuleType, capsys) -
     assert not out.exists()
 
 
+def test_cli_holdout_armed_with_flag(tmp_path: Path, db: Path, grid: ModuleType, capsys) -> None:
+    """E-7: явный --holdout-ok вооружает чтение окна за полом — exit 0, событие
+    HOLDOUT_ARMED напечатано, артефакты на месте; отказа HOLDOUT_GUARD нет."""
+    out = tmp_path / "cell"
+    argv = _argv(db, out)
+    argv[argv.index("--end") + 1] = "1790294401"
+    argv.append("--holdout-ok")
+    with pytest.raises(SystemExit) as exc:
+        grid.main(argv)
+    assert exc.value.code == 0
+    text = capsys.readouterr().out
+    assert "HOLDOUT_ARMED" in text
+    assert "HOLDOUT_GUARD" not in text
+    assert len(list(out.iterdir())) == 3
+
+
+def test_cli_holdout_flag_is_noop_inside_floor(
+    tmp_path: Path, db: Path, grid: ModuleType, capsys
+) -> None:
+    """Флаг вне холдаут-зоны ничего не меняет: штатный прогон, HOLDOUT_ARMED не печатается."""
+    out = tmp_path / "cell"
+    argv = _argv(db, out)
+    argv.append("--holdout-ok")
+    with pytest.raises(SystemExit) as exc:
+        grid.main(argv)
+    assert exc.value.code == 0
+    text = capsys.readouterr().out
+    assert "HOLDOUT_ARMED" not in text
+    assert len(list(out.iterdir())) == 3
+
+
+def test_cli_holdout_armed_still_enforces_other_guards(
+    tmp_path: Path, db: Path, grid: ModuleType, capsys
+) -> None:
+    """Флаг вооружает ЧТЕНИЕ, но не отменяет WINDOW/PARAM guards. Инвариант
+    one-shot-дисциплины: HOLDOUT_ARMED печатается только когда чтение реально
+    пойдёт (прогон, отклонённый WINDOW_GUARD, не оставляет «вооружено» в логе)."""
+    out = tmp_path / "cell"
+    argv = _argv(db, out)
+    argv[argv.index("--end") + 1] = "1790294401"
+    argv[argv.index("--start") + 1] = "1790294401"
+    argv.append("--holdout-ok")
+    with pytest.raises(SystemExit) as exc:
+        grid.main(argv)
+    assert exc.value.code == 2
+    text = capsys.readouterr().out
+    assert "WINDOW_GUARD" in text
+    assert "HOLDOUT_ARMED" not in text
+    assert not out.exists()
+
+
+def test_cli_holdout_guard_refuses_before_db_touch(
+    tmp_path: Path, db: Path, grid: ModuleType, monkeypatch
+) -> None:
+    """R-next-2 (регресс-пин): отказ без флага обязан предшествовать ЛЮБОМУ
+    касанию БД — connect падает AssertionError, если его вообще вызвали."""
+    out = tmp_path / "cell"
+    argv = _argv(db, out)
+    argv[argv.index("--end") + 1] = "1790294401"
+
+    def _boom(*_a: object, **_k: object) -> object:
+        raise AssertionError("connect() вызван до отклонения холдаут-окна")
+
+    monkeypatch.setattr(grid, "connect", _boom)
+    with pytest.raises(SystemExit) as exc:
+        grid.main(argv)
+    assert exc.value.code == 2
+    assert not out.exists()
+
+
+def test_cli_holdout_armed_event_precedes_first_db_read(
+    tmp_path: Path, db: Path, grid: ModuleType, capsys, monkeypatch
+) -> None:
+    """E-7: событие HOLDOUT_ARMED печатается ДО первого чтения БД."""
+    out = tmp_path / "cell"
+    argv = _argv(db, out)
+    argv[argv.index("--end") + 1] = "1790294401"
+    argv.append("--holdout-ok")
+    seen: list[str] = []
+    real_connect = grid.connect
+
+    def _spy(*a: object, **k: object) -> object:
+        seen.append(capsys.readouterr().out)
+        return real_connect(*a, **k)
+
+    monkeypatch.setattr(grid, "connect", _spy)
+    with pytest.raises(SystemExit) as exc:
+        grid.main(argv)
+    assert exc.value.code == 0
+    assert seen and "HOLDOUT_ARMED" in seen[0]
+
+
+def test_cli_holdout_warn_beyond_frozen_ceiling(
+    tmp_path: Path, db: Path, grid: ModuleType, capsys
+) -> None:
+    """end за замороженным потолком E-7 (1793577600) — предупреждение в stdout
+    (выход не меняется: дисквалификация чисел не происходит молча)."""
+    out = tmp_path / "cell"
+    argv = _argv(db, out)
+    argv[argv.index("--end") + 1] = "1793577601"
+    argv.append("--holdout-ok")
+    with pytest.raises(SystemExit) as exc:
+        grid.main(argv)
+    assert exc.value.code == 0
+    text = capsys.readouterr().out
+    assert "HOLDOUT_ARMED" in text
+    assert "WARN" in text
+
+
+def test_cli_holdout_no_warn_at_frozen_ceiling(
+    tmp_path: Path, db: Path, grid: ModuleType, capsys
+) -> None:
+    """Штатный end = 1793577600 ровно (полудоinterval) — WARN не печатается."""
+    out = tmp_path / "cell"
+    argv = _argv(db, out)
+    argv[argv.index("--end") + 1] = "1793577600"
+    argv.append("--holdout-ok")
+    with pytest.raises(SystemExit) as exc:
+        grid.main(argv)
+    assert exc.value.code == 0
+    text = capsys.readouterr().out
+    assert "WARN" not in text
+
+
 def test_cli_window_guard_degenerate(tmp_path: Path, db: Path, grid: ModuleType, capsys) -> None:
     out = tmp_path / "cell"
     argv = _argv(db, out)

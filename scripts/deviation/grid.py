@@ -10,7 +10,9 @@
 Эйты E2-1…E2-5 (включая bootstrap 30d seed=42) считаются замерщиком по
 артефактам, здесь — только сырые числа клетки.
 
-R-next-2: окно обязано кончаться до holdout (end_ts <= 1790294400).
+R-next-2: окно обязано кончаться до holdout (end_ts <= 1790294400). Исключение —
+E-7: явный флаг `--holdout-ok` вооружает чтение холдаута (печатает HOLDOUT_ARMED
+до чтения БД); без флага guard живёт — случайное чтение по-прежнему невозможно.
 Guards HOLDOUT/WINDOW/PARAM — отказ до чтения БД, exit code 2, артефактов нет.
 
 Пример (клетка E-b3, фолд f1):
@@ -42,7 +44,8 @@ from strategylab.data.schema import connect
 from strategylab.data.store import CandleStore
 from strategylab.deviation import SCAN_MIN_DEPTH, DeviationParams, run_deviation
 
-HOLDOUT_FLOOR = 1790294400  # R-next-2: никогда не читается
+HOLDOUT_FLOOR = 1790294400  # R-next-2: никогда не читается без явного --holdout-ok
+HOLDOUT_CEILING = 1793577600  # E-7: потолок замороженного холдаут-окна (полурединтервал)
 _DAYS_SEC = Decimal(86400)
 _CSV_COLUMNS = (
     "fork",
@@ -129,7 +132,7 @@ def _write_text(path: Path, lines: Sequence[str]) -> None:
 
 
 def run(args: argparse.Namespace) -> int:
-    if args.end > HOLDOUT_FLOOR:
+    if args.end > HOLDOUT_FLOOR and not args.holdout_ok:
         print(f"HOLDOUT_GUARD: end_ts {args.end} > {HOLDOUT_FLOOR} — отказ (R-next-2)")
         return 2
     if args.end <= args.start:
@@ -144,6 +147,14 @@ def run(args: argparse.Namespace) -> int:
     if args.tol <= 0 or args.capital <= 0 or args.ctx_hours < 0:
         print("PARAM_GUARD: tol/capital обязаны быть > 0, ctx_hours >= 0")
         return 2
+    # Все guards пройдены: событие arms печатается здесь, до первого чтения БД;
+    # отклонённый выше прогон не оставляет HOLDOUT_ARMED в логе (E-7 one-shot).
+    if args.end > HOLDOUT_FLOOR:
+        print(f"HOLDOUT_ARMED: end_ts {args.end} > {HOLDOUT_FLOOR} — чтение холдаута "
+              "вооружено явным --holdout-ok (E-7, одноразово)")
+        if args.end > HOLDOUT_CEILING:
+            print(f"WARN: end_ts {args.end} > потолка E-7 {HOLDOUT_CEILING} — выход за "
+                  "замороженное окно [1790294400, 1793577600), проверь опечатку")
     params = DeviationParams(
         tol=args.tol,
         depth=args.depth,
@@ -300,6 +311,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--capital", type=_decimal, default=Decimal("10000"))
     p.add_argument("--taker-fee", type=_decimal, default=Decimal("0.0006"), dest="taker_fee")
     p.add_argument("--slippage", type=_decimal, default=Decimal("0.0005"))
+    p.add_argument(
+        "--holdout-ok",
+        action="store_true",
+        dest="holdout_ok",
+        help="явное вооружение чтения холдаута (E-7); по умолчанию HOLDOUT_GUARD активен",
+    )
     return p
 
 
