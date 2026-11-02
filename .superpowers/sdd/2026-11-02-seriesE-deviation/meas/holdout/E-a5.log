@@ -1,0 +1,8 @@
+$ .venv/Scripts/python.exe scripts/deviation/grid.py --db data/ethusdt.db --symbol ETHUSDT --start 1790294400 --end 1793577600 --cell E-a5 --conf 60 --tol 0.020 --depth 0.003 --vol-filter 2 --exit-mode V1_48 --ctx-hours 960 --out data/calib/holdout_E-a5 --holdout-ok
+cwd: C:\Users\egoro\Documents\GitHub\strategylab
+exit=0 seconds=1.539
+--- stdout (raw) ---
+HOLDOUT_ARMED: end_ts 1793577600 > 1790294400 — чтение холдаута вооружено явным --holdout-ok (E-7, одноразово)
+deviation_version: 36a23dcff8c0
+net_pnl: -1310.346297535123879112232850 annualized_pct: -125.8622101579790041778855237 rounds: 4 events: 26 flat_fold: 0
+артефакты: data\calib\holdout_E-a5\dev_E-a5_ETHUSDT_1790294400_1793577600[.csv|_journal_p.csv|_report_p.txt]
