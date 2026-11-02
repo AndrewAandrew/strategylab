@@ -1,0 +1,84 @@
+разобрано LIVE-строк: 1053
+n: min 1 median 2 max 54
+LIVE n<=3: 775 из 1053
+LIVE n>=5: 206
+LIVE n>=10: 70
+LIVE n>=15: 29
+LIVE n>=20: 12
+evidence floor (min(nq)>=2 & n>=10): 39
+floor & n>=15: 21
+floor by sym : {'BTCUSDT': 4, 'ETHUSDT': 35}
+floor by tf : {'4h': 39}
+floor by tch : {2: 39}
+floor by tol : {0.01: 2, 0.02: 37}
+floor by d : {0.003: 22, 0.005: 17}
+floor by conf : {0: 10, 30: 8, 60: 21}
+floor by k : {1: 26, 2: 13}
+floor by reg : {'а': 16, 'б': 1, 'в': 6, 'г': 16}
+floor by ex : {'V1_24': 4, 'V1_48': 6, 'V2_R1': 6, 'V2_R15': 8, 'V2_R2': 15}
+уникальных конфиг-баз (без выхода) во floor: 20 | макс. выходов на базу: 5
+--- базы floor (sym tf tch tol d conf k reg) x число выходов:
+BTCUSDT 4h tch2 tol0.010 d0.005 conf0 k1 regа x1
+BTCUSDT 4h tch2 tol0.010 d0.005 conf0 k1 regг x1
+BTCUSDT 4h tch2 tol0.020 d0.003 conf30 k1 regа x1
+BTCUSDT 4h tch2 tol0.020 d0.003 conf30 k1 regв x1
+ETHUSDT 4h tch2 tol0.020 d0.003 conf0 k1 regб x1
+ETHUSDT 4h tch2 tol0.020 d0.003 conf0 k1 regг x3
+ETHUSDT 4h tch2 tol0.020 d0.003 conf30 k1 regг x1
+ETHUSDT 4h tch2 tol0.020 d0.003 conf30 k2 regа x3
+ETHUSDT 4h tch2 tol0.020 d0.003 conf60 k1 regа x1
+ETHUSDT 4h tch2 tol0.020 d0.003 conf60 k1 regг x1
+ETHUSDT 4h tch2 tol0.020 d0.003 conf60 k2 regа x5
+ETHUSDT 4h tch2 tol0.020 d0.003 conf60 k2 regг x5
+ETHUSDT 4h tch2 tol0.020 d0.005 conf0 k1 regа x1
+ETHUSDT 4h tch2 tol0.020 d0.005 conf0 k1 regв x1
+ETHUSDT 4h tch2 tol0.020 d0.005 conf0 k1 regг x2
+ETHUSDT 4h tch2 tol0.020 d0.005 conf30 k1 regа x1
+ETHUSDT 4h tch2 tol0.020 d0.005 conf30 k1 regв x1
+ETHUSDT 4h tch2 tol0.020 d0.005 conf60 k1 regа x3
+ETHUSDT 4h tch2 tol0.020 d0.005 conf60 k1 regв x3
+ETHUSDT 4h tch2 tol0.020 d0.005 conf60 k1 regг x3
+floor суммарно $ по третям: T1=14796 T2=9987 T3=84717
+доля $ из третьей трети на клетку: med 0.78, >0.6: 33/39
+floor ann: min +6.59 med +58.13 max +96.61
+floor: regг пул == regа пул (пауза не сработала): 5 из 16
+--- floor по ann (все):
+ETH 4h tch2 tol0.020 d0.003 conf60 k2 regа V1_48 n=12 nq=(2, 2, 8) ann=+96.6% q=699/397/3668
+ETH 4h tch2 tol0.020 d0.003 conf60 k2 regг V1_48 n=12 nq=(2, 2, 8) ann=+96.6% q=699/397/3668
+ETH 4h tch2 tol0.020 d0.003 conf60 k2 regа V2_R2 n=12 nq=(2, 2, 8) ann=+96.2% q=503/665/3578
+ETH 4h tch2 tol0.020 d0.003 conf60 k2 regг V2_R2 n=10 nq=(2, 2, 6) ann=+95.1% q=503/665/3524
+ETH 4h tch2 tol0.020 d0.003 conf60 k1 regа V2_R2 n=32 nq=(9, 6, 17) ann=+93.8% q=1170/117/3337
+ETH 4h tch2 tol0.020 d0.005 conf60 k1 regа V1_48 n=15 nq=(3, 4, 8) ann=+91.7% q=694/208/3619
+ETH 4h tch2 tol0.020 d0.005 conf60 k1 regг V1_48 n=15 nq=(3, 4, 8) ann=+91.7% q=694/208/3619
+ETH 4h tch2 tol0.020 d0.003 conf30 k2 regа V2_R2 n=15 nq=(3, 4, 8) ann=+89.8% q=312/539/3578
+ETH 4h tch2 tol0.020 d0.005 conf60 k1 regг V2_R2 n=14 nq=(3, 4, 7) ann=+83.3% q=587/310/3211
+ETH 4h tch2 tol0.020 d0.005 conf60 k1 regа V2_R2 n=15 nq=(3, 4, 8) ann=+81.5% q=587/310/3123
+ETH 4h tch2 tol0.020 d0.003 conf60 k1 regг V2_R2 n=13 nq=(3, 4, 6) ann=+77.8% q=53/310/3473
+ETH 4h tch2 tol0.020 d0.003 conf30 k1 regг V2_R2 n=14 nq=(3, 5, 6) ann=+77.0% q=53/271/3473
+ETH 4h tch2 tol0.020 d0.005 conf30 k1 regа V2_R2 n=19 nq=(4, 7, 8) ann=+73.3% q=397/93/3123
+ETH 4h tch2 tol0.020 d0.003 conf0 k1 regг V2_R2 n=27 nq=(10, 6, 11) ann=+71.7% q=398/343/2796
+ETH 4h tch2 tol0.020 d0.005 conf0 k1 regг V2_R2 n=18 nq=(6, 5, 7) ann=+70.0% q=353/436/2662
+ETH 4h tch2 tol0.020 d0.003 conf60 k2 regг V2_R15 n=10 nq=(2, 2, 6) ann=+68.7% q=368/490/2528
+ETH 4h tch2 tol0.020 d0.003 conf60 k2 regа V2_R15 n=12 nq=(2, 2, 8) ann=+68.6% q=368/490/2523
+ETH 4h tch2 tol0.020 d0.003 conf30 k2 regа V2_R15 n=15 nq=(3, 4, 8) ann=+62.1% q=178/364/2523
+ETH 4h tch2 tol0.020 d0.005 conf0 k1 regа V2_R2 n=37 nq=(8, 8, 21) ann=+59.3% q=52/50/2823
+ETH 4h tch2 tol0.020 d0.005 conf60 k1 regг V2_R15 n=14 nq=(3, 4, 7) ann=+58.1% q=428/135/2304
+ETH 4h tch2 tol0.020 d0.005 conf60 k1 regа V2_R15 n=15 nq=(3, 4, 8) ann=+56.3% q=428/135/2216
+ETH 4h tch2 tol0.020 d0.005 conf0 k1 regг V2_R15 n=19 nq=(6, 7, 6) ann=+48.1% q=175/216/1982
+ETH 4h tch2 tol0.020 d0.003 conf60 k2 regа V2_R1 n=12 nq=(2, 2, 8) ann=+48.1% q=234/315/1820
+ETH 4h tch2 tol0.020 d0.003 conf60 k2 regг V2_R1 n=12 nq=(2, 2, 8) ann=+48.1% q=234/315/1820
+ETH 4h tch2 tol0.020 d0.003 conf0 k1 regг V2_R15 n=26 nq=(10, 8, 8) ann=+44.0% q=159/123/1890
+ETH 4h tch2 tol0.020 d0.005 conf60 k1 regв V1_48 n=12 nq=(3, 4, 5) ann=+43.0% q=694/208/1217
+ETH 4h tch2 tol0.020 d0.003 conf30 k2 regа V2_R1 n=15 nq=(3, 4, 8) ann=+41.6% q=44/190/1820
+ETH 4h tch2 tol0.020 d0.003 conf60 k2 regа V1_24 n=12 nq=(2, 2, 8) ann=+40.7% q=580/209/1221
+ETH 4h tch2 tol0.020 d0.003 conf60 k2 regг V1_24 n=12 nq=(2, 2, 8) ann=+40.7% q=580/209/1221
+BTC 4h tch2 tol0.020 d0.003 conf30 k1 regв V1_48 n=48 nq=(9, 9, 30) ann=+36.9% q=171/521/1127
+ETH 4h tch2 tol0.020 d0.003 conf0 k1 regг V2_R1 n=30 nq=(10, 8, 12) ann=+35.2% q=232/38/1467
+ETH 4h tch2 tol0.020 d0.005 conf60 k1 regв V2_R2 n=12 nq=(3, 4, 5) ann=+30.2% q=587/310/594
+ETH 4h tch2 tol0.020 d0.005 conf30 k1 regв V2_R2 n=16 nq=(4, 7, 5) ann=+22.0% q=397/93/594
+ETH 4h tch2 tol0.020 d0.005 conf60 k1 regв V2_R15 n=12 nq=(3, 4, 5) ann=+19.3% q=428/135/387
+BTC 4h tch2 tol0.010 d0.005 conf0 k1 regа V1_24 n=36 nq=(2, 9, 25) ann=+18.1% q=88/26/780
+BTC 4h tch2 tol0.010 d0.005 conf0 k1 regг V1_24 n=36 nq=(2, 9, 25) ann=+18.1% q=88/26/780
+ETH 4h tch2 tol0.020 d0.005 conf0 k1 regв V2_R2 n=29 nq=(8, 8, 13) ann=+12.9% q=52/50/535
+BTC 4h tch2 tol0.020 d0.003 conf30 k1 regа V2_R1 n=54 nq=(9, 10, 35) ann=+7.5% q=332/33/7
+ETH 4h tch2 tol0.020 d0.003 conf0 k1 regб V2_R1 n=11 nq=(3, 3, 5) ann=+6.6% q=197/42/86
