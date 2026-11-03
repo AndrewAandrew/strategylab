@@ -1,0 +1,194 @@
+{
+  "rule": "top-3 Bybit linear perpetuals by turnover24h after BTC/ETH at snapshot (GLOBAL-STRATEGY-AUDIT 7ad653e, Series V test-plan / P1)",
+  "endpoint": "https://api.bybit.com/v5/market/tickers?category=linear",
+  "snapshot_utc": "2026-11-03T17:18:15+00:00",
+  "snapshot_unix": 1793726295,
+  "row_count_total": 934,
+  "row_count_filtered": 824,
+  "excluded": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "top25_raw": [
+    {
+      "symbol": "SOXLUSDT",
+      "turnover24h": "614791875.9638",
+      "volume24h": "8496518.7100",
+      "lastPrice": "74.93",
+      "fundingRate": "0"
+    },
+    {
+      "symbol": "SOLUSDT",
+      "turnover24h": "499589980.5370",
+      "volume24h": "5411070.0000",
+      "lastPrice": "93.380",
+      "fundingRate": "0.00001638"
+    },
+    {
+      "symbol": "ZECUSDT",
+      "turnover24h": "419273917.7219",
+      "volume24h": "359037.5300",
+      "lastPrice": "1208.65",
+      "fundingRate": "0.0001"
+    },
+    {
+      "symbol": "HYPEUSDT",
+      "turnover24h": "369084930.3779",
+      "volume24h": "4336496.5200",
+      "lastPrice": "86.262",
+      "fundingRate": "0.00001531"
+    },
+    {
+      "symbol": "XRPUSDT",
+      "turnover24h": "316417334.1390",
+      "volume24h": "250622872.1000",
+      "lastPrice": "1.2806",
+      "fundingRate": "0.0001"
+    },
+    {
+      "symbol": "CLUSDT",
+      "turnover24h": "253334274.6125",
+      "volume24h": "2630754.4400",
+      "lastPrice": "95.960",
+      "fundingRate": "0"
+    },
+    {
+      "symbol": "NEARUSDT",
+      "turnover24h": "234526348.5486",
+      "volume24h": "60780723.9000",
+      "lastPrice": "3.8250",
+      "fundingRate": "0.0001"
+    },
+    {
+      "symbol": "XAUUSDT",
+      "turnover24h": "155274292.3476",
+      "volume24h": "39361.2740",
+      "lastPrice": "3939.18",
+      "fundingRate": "0.00020289"
+    },
+    {
+      "symbol": "1000PEPEUSDT",
+      "turnover24h": "82881260.5408",
+      "volume24h": "17348889500.0000",
+      "lastPrice": "0.0048270",
+      "fundingRate": "0.0001"
+    },
+    {
+      "symbol": "KORUUSDT",
+      "turnover24h": "75193853.3736",
+      "volume24h": "6909805.0900",
+      "lastPrice": "11.06",
+      "fundingRate": "0"
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "turnover24h": "73467360.8655",
+      "volume24h": "989645561.0000",
+      "lastPrice": "0.07527",
+      "fundingRate": "0.0001"
+    },
+    {
+      "symbol": "ENAUSDT",
+      "turnover24h": "72607181.4891",
+      "volume24h": "426861841.0000",
+      "lastPrice": "0.17102",
+      "fundingRate": "0.00005"
+    },
+    {
+      "symbol": "SNDKUSDT",
+      "turnover24h": "70809611.4396",
+      "volume24h": "63816.8100",
+      "lastPrice": "1122.05",
+      "fundingRate": "0.0001263"
+    },
+    {
+      "symbol": "XAGUSDT",
+      "turnover24h": "66451970.2990",
+      "volume24h": "1332792.5870",
+      "lastPrice": "49.85",
+      "fundingRate": "0.00012791"
+    },
+    {
+      "symbol": "SKHYNIXUSDT",
+      "turnover24h": "66301558.3834",
+      "volume24h": "63021.3920",
+      "lastPrice": "1069.75",
+      "fundingRate": "-0.00008414"
+    },
+    {
+      "symbol": "AAPLUSDT",
+      "turnover24h": "57484909.5910",
+      "volume24h": "173097.0100",
+      "lastPrice": "331.89",
+      "fundingRate": "0"
+    },
+    {
+      "symbol": "SUIUSDT",
+      "turnover24h": "57083432.4690",
+      "volume24h": "65108270.0000",
+      "lastPrice": "0.89440",
+      "fundingRate": "0.0001"
+    },
+    {
+      "symbol": "AKEUSDT",
+      "turnover24h": "56118885.0328",
+      "volume24h": "11467461600.0000",
+      "lastPrice": "0.0040470",
+      "fundingRate": "0.00005"
+    },
+    {
+      "symbol": "SOXSUSDT",
+      "turnover24h": "53199279.5233",
+      "volume24h": "974309.8900",
+      "lastPrice": "52.44",
+      "fundingRate": "0"
+    },
+    {
+      "symbol": "ARIAUSDT",
+      "turnover24h": "52934685.0944",
+      "volume24h": "452245410.0000",
+      "lastPrice": "0.11976",
+      "fundingRate": "0.00060539"
+    },
+    {
+      "symbol": "UNIUSDT",
+      "turnover24h": "47294170.9544",
+      "volume24h": "6629129.4000",
+      "lastPrice": "7.295",
+      "fundingRate": "0.0001"
+    },
+    {
+      "symbol": "SPCXUSDT",
+      "turnover24h": "45182827.3126",
+      "volume24h": "325421.0400",
+      "lastPrice": "142.06",
+      "fundingRate": "0"
+    },
+    {
+      "symbol": "XMRUSDT",
+      "turnover24h": "43195684.8265",
+      "volume24h": "70020.1700",
+      "lastPrice": "626.56",
+      "fundingRate": "0.0001"
+    },
+    {
+      "symbol": "ADAUSDT",
+      "turnover24h": "42688607.2228",
+      "volume24h": "226175727.0000",
+      "lastPrice": "0.1899",
+      "fundingRate": "0.0001"
+    },
+    {
+      "symbol": "MUUSDT",
+      "turnover24h": "40404418.1984",
+      "volume24h": "47376.5700",
+      "lastPrice": "857.26",
+      "fundingRate": "0.00009597"
+    }
+  ],
+  "chosen": [
+    "SOXLUSDT",
+    "SOLUSDT",
+    "ZECUSDT"
+  ]
+}
