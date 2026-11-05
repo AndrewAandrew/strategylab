@@ -695,3 +695,13 @@ origin/spec01-two-sided-momentum (463fb17), origin/diag/spec01-exploration (f14c
   H2=средняя ann>=3%/год, один arms-прогон на клетку.
 - Инкременты 05.11: funding BTC/ETH обновились, бары BTC/ETH +1920, алты +1878 хвосты.
 - Далее: worktree seriesV-sim, TDD движок, fresh-eyes, run_grid_V (27), gates, брат-публикация.
+
+## 2026-11-05(o) — V-5 решётка: 0 живых, Series V NO-GO на freeze-стадии, V-7 не вооружался
+- Цепочка: amendment 49e85f3 -> TDD 9f37702 (573/3) -> merge e4bd707 -> эквивалентность
+  probe<->sim 432 клетки 0 расхождений -> run_grid_V 27/27 rc=0 (88s, CTL побайтно YES) ->
+  gates_V5: живых 0 (все мертвы V-a' nq>=3: SOXL t0-вакуум листинга, SOL t1 nq=2/q0=-57$,
+  ZEC t0 nq=0) -> брат RESULTS (R-next-1) -> аудит лида 0 расхождений -> V5-VERDICT NO-GO.
+- V-7 guard: rc=3, не вооружался; холдаут SOL не читан. E-механика мертва трижды ->
+  do-not-resurrect (4-я попытка запрещена). Реестр: A,B,C,D,F,T,K,V = 0 выживших.
+- Живая линия одна: H-0 (ETH z3r3 low-ADX), критерии заморожены, прогон после 2027-01-01.
+- Данные: инкременты 05.11 применены (BTC/ETH +1920 бара, алты +1878, funding свежий).
