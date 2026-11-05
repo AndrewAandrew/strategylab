@@ -1,0 +1,147 @@
+# V-5 grid runner | закон: V2-SIM-AMENDMENT-FROZEN.md §3 (FROZEN 2026-11-05 до чисел)
+# окно [1774742400, 1790294400) ctx=0 tol=0.010 d=0.005 conf=0 k=1 tf=14400s tch=2 | REPO HEAD e4bd707f348b7696d2741bc5c0caa855e06cc710
+# запуск 2026-11-05 07:19:24
+[01/27] $ scripts\deviation\grid.py --db data/soxlusdt.db --symbol SOXLUSDT --start 1774742400 --end 1790294400 --cell V-a1_SOXLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime а --exit-mode V1_24 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-a1_SOXLUSDT
+deviation_version: ac2663ac720f
+net_pnl: 3704.400920870683446808069769 annualized_pct: 75.11701867321108100471919256 rounds: 10 events: 11 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-a1_SOXLUSDT\dev_V-a1_SOXLUSDT_SOXLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[01/27] exit=0
+[02/27] $ scripts\deviation\grid.py --db data/soxlusdt.db --symbol SOXLUSDT --start 1774742400 --end 1790294400 --cell V-a2_SOXLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime а --exit-mode V1_48 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-a2_SOXLUSDT
+deviation_version: 468c52770858
+net_pnl: 3357.650088177720736846886882 annualized_pct: 68.08568234360378160828409511 rounds: 10 events: 11 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-a2_SOXLUSDT\dev_V-a2_SOXLUSDT_SOXLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[02/27] exit=0
+[03/27] $ scripts\deviation\grid.py --db data/soxlusdt.db --symbol SOXLUSDT --start 1774742400 --end 1790294400 --cell V-a3_SOXLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime а --exit-mode V2_R1 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-a3_SOXLUSDT
+deviation_version: 5730b82bd68d
+net_pnl: 2702.791786614105533026082828 annualized_pct: 54.80661122856380664191779068 rounds: 10 events: 11 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-a3_SOXLUSDT\dev_V-a3_SOXLUSDT_SOXLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[03/27] exit=0
+[04/27] $ scripts\deviation\grid.py --db data/soxlusdt.db --symbol SOXLUSDT --start 1774742400 --end 1790294400 --cell V-b1_SOXLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime в --exit-mode V1_24 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-b1_SOXLUSDT
+deviation_version: 3c4e4e5dd803
+net_pnl: 2472.519633302517107992628454 annualized_pct: 50.13720367530104135651718809 rounds: 7 events: 11 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-b1_SOXLUSDT\dev_V-b1_SOXLUSDT_SOXLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[04/27] exit=0
+[05/27] $ scripts\deviation\grid.py --db data/soxlusdt.db --symbol SOXLUSDT --start 1774742400 --end 1790294400 --cell V-b2_SOXLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime в --exit-mode V1_48 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-b2_SOXLUSDT
+deviation_version: cfd990be98d0
+net_pnl: 2937.106174379222385259650959 annualized_pct: 59.55798631380089836776514444 rounds: 7 events: 11 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-b2_SOXLUSDT\dev_V-b2_SOXLUSDT_SOXLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[05/27] exit=0
+[06/27] $ scripts\deviation\grid.py --db data/soxlusdt.db --symbol SOXLUSDT --start 1774742400 --end 1790294400 --cell V-b3_SOXLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime в --exit-mode V2_R1 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-b3_SOXLUSDT
+deviation_version: 5ce1703f4e77
+net_pnl: 2031.699122510023821324854566 annualized_pct: 41.19834331756437193242066203 rounds: 7 events: 11 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-b3_SOXLUSDT\dev_V-b3_SOXLUSDT_SOXLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[06/27] exit=0
+[07/27] $ scripts\deviation\grid.py --db data/soxlusdt.db --symbol SOXLUSDT --start 1774742400 --end 1790294400 --cell V-c1_SOXLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime г --exit-mode V1_24 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-c1_SOXLUSDT
+deviation_version: 00ab36aa75c2
+net_pnl: 3704.400920870683446808069769 annualized_pct: 75.11701867321108100471919256 rounds: 10 events: 11 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-c1_SOXLUSDT\dev_V-c1_SOXLUSDT_SOXLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[07/27] exit=0
+[08/27] $ scripts\deviation\grid.py --db data/soxlusdt.db --symbol SOXLUSDT --start 1774742400 --end 1790294400 --cell V-c2_SOXLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime г --exit-mode V1_48 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-c2_SOXLUSDT
+deviation_version: 7e876644a7b9
+net_pnl: 3357.650088177720736846886882 annualized_pct: 68.08568234360378160828409511 rounds: 10 events: 11 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-c2_SOXLUSDT\dev_V-c2_SOXLUSDT_SOXLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[08/27] exit=0
+[09/27] $ scripts\deviation\grid.py --db data/soxlusdt.db --symbol SOXLUSDT --start 1774742400 --end 1790294400 --cell V-c3_SOXLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime г --exit-mode V2_R1 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-c3_SOXLUSDT
+deviation_version: cbc1128ea834
+net_pnl: 2702.791786614105533026082828 annualized_pct: 54.80661122856380664191779068 rounds: 10 events: 11 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-c3_SOXLUSDT\dev_V-c3_SOXLUSDT_SOXLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[09/27] exit=0
+[10/27] $ scripts\deviation\grid.py --db data/solusdt.db --symbol SOLUSDT --start 1774742400 --end 1790294400 --cell V-a1_SOLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime а --exit-mode V1_24 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-a1_SOLUSDT
+deviation_version: 35ac15636818
+net_pnl: -1695.003884590876179308763386 annualized_pct: -34.37091210420387808042770199 rounds: 16 events: 32 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-a1_SOLUSDT\dev_V-a1_SOLUSDT_SOLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[10/27] exit=0
+[11/27] $ scripts\deviation\grid.py --db data/solusdt.db --symbol SOLUSDT --start 1774742400 --end 1790294400 --cell V-a2_SOLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime а --exit-mode V1_48 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-a2_SOLUSDT
+deviation_version: 61a5cef073f8
+net_pnl: 1183.804776132070793222399307 annualized_pct: 24.00493018267810219589865262 rounds: 16 events: 32 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-a2_SOLUSDT\dev_V-a2_SOLUSDT_SOLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[11/27] exit=0
+[12/27] $ scripts\deviation\grid.py --db data/solusdt.db --symbol SOLUSDT --start 1774742400 --end 1790294400 --cell V-a3_SOLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime а --exit-mode V2_R1 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-a3_SOLUSDT
+deviation_version: a9ca70d66d1d
+net_pnl: 330.0328175549311412777156920 annualized_pct: 6.692332133752770364798123756 rounds: 16 events: 32 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-a3_SOLUSDT\dev_V-a3_SOLUSDT_SOLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[12/27] exit=0
+[13/27] $ scripts\deviation\grid.py --db data/solusdt.db --symbol SOLUSDT --start 1774742400 --end 1790294400 --cell V-b1_SOLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime в --exit-mode V1_24 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-b1_SOLUSDT
+deviation_version: 52f575ddec37
+net_pnl: -1492.943224184972868500047230 annualized_pct: -30.27357093486194983347317994 rounds: 11 events: 32 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-b1_SOLUSDT\dev_V-b1_SOLUSDT_SOLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[13/27] exit=0
+[14/27] $ scripts\deviation\grid.py --db data/solusdt.db --symbol SOLUSDT --start 1774742400 --end 1790294400 --cell V-b2_SOLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime в --exit-mode V1_48 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-b2_SOLUSDT
+deviation_version: f6d2717f06d0
+net_pnl: -8.5273280730365132787430400 annualized_pct: -0.1729152637032404081522894222 rounds: 11 events: 32 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-b2_SOLUSDT\dev_V-b2_SOLUSDT_SOLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[14/27] exit=0
+[15/27] $ scripts\deviation\grid.py --db data/solusdt.db --symbol SOLUSDT --start 1774742400 --end 1790294400 --cell V-b3_SOLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime в --exit-mode V2_R1 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-b3_SOLUSDT
+deviation_version: 9c255f553abb
+net_pnl: -0.49476002293591596106317900 annualized_pct: -0.01003263379842274032155890750 rounds: 11 events: 32 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-b3_SOLUSDT\dev_V-b3_SOLUSDT_SOLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[15/27] exit=0
+[16/27] $ scripts\deviation\grid.py --db data/solusdt.db --symbol SOLUSDT --start 1774742400 --end 1790294400 --cell V-c1_SOLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime г --exit-mode V1_24 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-c1_SOLUSDT
+deviation_version: 8893bd8ccba1
+net_pnl: -1695.003884590876179308763386 annualized_pct: -34.37091210420387808042770199 rounds: 16 events: 32 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-c1_SOLUSDT\dev_V-c1_SOLUSDT_SOLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[16/27] exit=0
+[17/27] $ scripts\deviation\grid.py --db data/solusdt.db --symbol SOLUSDT --start 1774742400 --end 1790294400 --cell V-c2_SOLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime г --exit-mode V1_48 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-c2_SOLUSDT
+deviation_version: 993caf5c464a
+net_pnl: 1183.804776132070793222399307 annualized_pct: 24.00493018267810219589865262 rounds: 16 events: 32 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-c2_SOLUSDT\dev_V-c2_SOLUSDT_SOLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[17/27] exit=0
+[18/27] $ scripts\deviation\grid.py --db data/solusdt.db --symbol SOLUSDT --start 1774742400 --end 1790294400 --cell V-c3_SOLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime г --exit-mode V2_R1 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-c3_SOLUSDT
+deviation_version: 358a08021993
+net_pnl: 614.5428967297205669372366630 annualized_pct: 12.46156429479711149622729900 rounds: 14 events: 32 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-c3_SOLUSDT\dev_V-c3_SOLUSDT_SOLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[18/27] exit=0
+[19/27] $ scripts\deviation\grid.py --db data/zecusdt.db --symbol ZECUSDT --start 1774742400 --end 1790294400 --cell V-a1_ZECUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime а --exit-mode V1_24 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-a1_ZECUSDT
+deviation_version: fa00fd5f6989
+net_pnl: -2000.224655054910959796349126 annualized_pct: -40.56011106083569446253707950 rounds: 6 events: 9 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-a1_ZECUSDT\dev_V-a1_ZECUSDT_ZECUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[19/27] exit=0
+[20/27] $ scripts\deviation\grid.py --db data/zecusdt.db --symbol ZECUSDT --start 1774742400 --end 1790294400 --cell V-a2_ZECUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime а --exit-mode V1_48 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-a2_ZECUSDT
+deviation_version: 5e969e16ce51
+net_pnl: -1066.213025902730283511773830 annualized_pct: -21.62043080302758630454430267 rounds: 6 events: 9 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-a2_ZECUSDT\dev_V-a2_ZECUSDT_ZECUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[20/27] exit=0
+[21/27] $ scripts\deviation\grid.py --db data/zecusdt.db --symbol ZECUSDT --start 1774742400 --end 1790294400 --cell V-a3_ZECUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime а --exit-mode V2_R1 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-a3_ZECUSDT
+deviation_version: e8278bfbcc1a
+net_pnl: 1326.295242171052922539072065 annualized_pct: 26.89432018846857315148673909 rounds: 6 events: 9 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-a3_ZECUSDT\dev_V-a3_ZECUSDT_ZECUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[21/27] exit=0
+[22/27] $ scripts\deviation\grid.py --db data/zecusdt.db --symbol ZECUSDT --start 1774742400 --end 1790294400 --cell V-b1_ZECUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime в --exit-mode V1_24 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-b1_ZECUSDT
+deviation_version: 8d0caae6786c
+net_pnl: -153.0977500154469396602259160 annualized_pct: -3.104482153091007387554581074 rounds: 5 events: 9 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-b1_ZECUSDT\dev_V-b1_ZECUSDT_ZECUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[22/27] exit=0
+[23/27] $ scripts\deviation\grid.py --db data/zecusdt.db --symbol ZECUSDT --start 1774742400 --end 1790294400 --cell V-b2_ZECUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime в --exit-mode V1_48 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-b2_ZECUSDT
+deviation_version: 819b73b44101
+net_pnl: 1345.787856174023719075713870 annualized_pct: 27.28958708352881430347975348 rounds: 5 events: 9 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-b2_ZECUSDT\dev_V-b2_ZECUSDT_ZECUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[23/27] exit=0
+[24/27] $ scripts\deviation\grid.py --db data/zecusdt.db --symbol ZECUSDT --start 1774742400 --end 1790294400 --cell V-b3_ZECUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime в --exit-mode V2_R1 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-b3_ZECUSDT
+deviation_version: 4dbd0529f7d7
+net_pnl: -449.5906638282795142664625730 annualized_pct: -9.116699572073445705958824394 rounds: 5 events: 9 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-b3_ZECUSDT\dev_V-b3_ZECUSDT_ZECUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[24/27] exit=0
+[25/27] $ scripts\deviation\grid.py --db data/zecusdt.db --symbol ZECUSDT --start 1774742400 --end 1790294400 --cell V-c1_ZECUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime г --exit-mode V1_24 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-c1_ZECUSDT
+deviation_version: cec72970a403
+net_pnl: -2000.224655054910959796349126 annualized_pct: -40.56011106083569446253707950 rounds: 6 events: 9 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-c1_ZECUSDT\dev_V-c1_ZECUSDT_ZECUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[25/27] exit=0
+[26/27] $ scripts\deviation\grid.py --db data/zecusdt.db --symbol ZECUSDT --start 1774742400 --end 1790294400 --cell V-c2_ZECUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime г --exit-mode V1_48 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-c2_ZECUSDT
+deviation_version: 92faabb5efb2
+net_pnl: -1066.213025902730283511773830 annualized_pct: -21.62043080302758630454430267 rounds: 6 events: 9 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-c2_ZECUSDT\dev_V-c2_ZECUSDT_ZECUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[26/27] exit=0
+[27/27] $ scripts\deviation\grid.py --db data/zecusdt.db --symbol ZECUSDT --start 1774742400 --end 1790294400 --cell V-c3_ZECUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime г --exit-mode V2_R1 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_V-c3_ZECUSDT
+deviation_version: ccf3df0ca4c8
+net_pnl: 1413.210427746917872045208838 annualized_pct: 28.65676700709027907202784588 rounds: 3 events: 9 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_V-c3_ZECUSDT\dev_V-c3_ZECUSDT_ZECUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[27/27] exit=0
+[CTL] $ scripts\deviation\grid.py --db data/solusdt.db --symbol SOLUSDT --start 1774742400 --end 1790294400 --cell V-b2_SOLUSDT --tol 0.010 --depth 0.005 --conf 0 --vol-filter 1 --regime в --exit-mode V1_48 --zone-tf-secs 14400 --touches 2 --ctx-hours 0 --out data\calib\dev_ctl_V-b2_SOLUSDT
+deviation_version: f6d2717f06d0
+net_pnl: -8.5273280730365132787430400 annualized_pct: -0.1729152637032404081522894222 rounds: 11 events: 32 flat_fold: 0
+артефакты: C:\Users\egoro\Documents\GitHub\strategylab\data\calib\dev_ctl_V-b2_SOLUSDT\dev_V-b2_SOLUSDT_SOLUSDT_1774742400_1790294400[.csv|_journal_p.csv|_report_p.txt]
+[CTL] побайтно .csv: True
+[CTL] побайтно _journal_p.csv: True
+[CTL] побайтно _report_p.txt: True
+[CTL] ДЕТЕРМИНИЗМ: YES
+# ИТОГ: 27 прогонов, fail=0, детерминизм=True, 88s
