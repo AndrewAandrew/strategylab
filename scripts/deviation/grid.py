@@ -13,6 +13,10 @@
 R-next-2: окно обязано кончаться до holdout (end_ts <= 1790294400). Исключение —
 E-7: явный флаг `--holdout-ok` вооружает чтение холдаута (печатает HOLDOUT_ARMED
 до чтения БД); без флага guard живёт — случайное чтение по-прежнему невозможно.
+V-2-SIM amendment §1.2/§1.4: `--regime` а/в/г (дефолт «а» = E-поведение, «б» —
+ошибка парсера), `--exit-mode` включает V1_24/V2_R1/V2_R15, `--holdout-ceiling`
+(дефолт 1793577600) задаёт порог WARN; regime — последняя колонка csv и часть
+базиса `deviation_version`.
 Guards HOLDOUT/WINDOW/PARAM — отказ до чтения БД, exit code 2, артефактов нет.
 
 Пример (клетка E-b3, фолд f1):
@@ -42,7 +46,13 @@ if str(_REPO_ROOT) not in sys.path:
 
 from strategylab.data.schema import connect
 from strategylab.data.store import CandleStore
-from strategylab.deviation import SCAN_MIN_DEPTH, DeviationParams, run_deviation
+from strategylab.deviation import (
+    EXIT_MODES,
+    REGIMES,
+    SCAN_MIN_DEPTH,
+    DeviationParams,
+    run_deviation,
+)
 
 HOLDOUT_FLOOR = 1790294400  # R-next-2: никогда не читается без явного --holdout-ok
 HOLDOUT_CEILING = 1793577600  # E-7: потолок замороженного холдаут-окна (полурединтервал)
@@ -78,6 +88,8 @@ _CSV_COLUMNS = (
     "equity",
     "annualized_pct",
     "flat_fold",
+    # amendment §1.2: regime — только добавка в КОНЕЦ, позиции E-колонок не едут.
+    "regime",
 )
 _JOURNAL_HEADER = "ts,kind,side,ref,fill,qty,reason,cash_delta,cash_after"
 _CELL_RE = re.compile(r"[A-Za-z0-9_.-]{1,24}")
@@ -102,6 +114,7 @@ def _deviation_version(params: DeviationParams, symbol: str, start: int, end: in
             str(params.capital),
             str(params.taker_fee),
             str(params.slippage),
+            params.regime,
         )
     )
     return hashlib.sha256(basis.encode()).hexdigest()[:12]
@@ -152,9 +165,9 @@ def run(args: argparse.Namespace) -> int:
     if args.end > HOLDOUT_FLOOR:
         print(f"HOLDOUT_ARMED: end_ts {args.end} > {HOLDOUT_FLOOR} — чтение холдаута "
               "вооружено явным --holdout-ok (E-7, одноразово)")
-        if args.end > HOLDOUT_CEILING:
-            print(f"WARN: end_ts {args.end} > потолка E-7 {HOLDOUT_CEILING} — выход за "
-                  "замороженное окно [1790294400, 1793577600), проверь опечатку")
+        if args.end > args.holdout_ceiling:
+            print(f"WARN: end_ts {args.end} > потолка холдаута {args.holdout_ceiling} — выход за "
+                  "замороженное окно, проверь опечатку")
     params = DeviationParams(
         tol=args.tol,
         depth=args.depth,
@@ -166,6 +179,7 @@ def run(args: argparse.Namespace) -> int:
         capital=args.capital,
         taker_fee=args.taker_fee,
         slippage=args.slippage,
+        regime=args.regime,
     )
     version = _deviation_version(params, args.symbol, args.start, args.end, args.ctx_hours)
 
@@ -191,7 +205,7 @@ def run(args: argparse.Namespace) -> int:
         f"capital: {_fmt(params.capital)}",
         f"grid: tol={_fmt(params.tol)}; depth={_fmt(params.depth)}; conf={params.conf_min}; "
         f"k={params.vol_filter}; exit={params.exit_mode}; tf={params.zone_tf_secs}s; "
-        f"tch={params.touches}",
+        f"tch={params.touches}; regime={params.regime}",
         f"deviation_version: {version}",
         f"costs: taker_fee={_fmt(params.taker_fee)} slippage={_fmt(params.slippage)} "
         "(adverse, обе ноги; fee от capital на ногу, lev 1)",
@@ -231,6 +245,7 @@ def run(args: argparse.Namespace) -> int:
                 _fmt(result.equity),
                 _fmt(net_ann),
                 int(result.flat_fold),
+                params.regime,
             )
         ),
     ]
@@ -260,7 +275,7 @@ def run(args: argparse.Namespace) -> int:
         f"deviation_version={version}",
         f"# grid: tol={_fmt(params.tol)} depth={_fmt(params.depth)} conf={params.conf_min} "
         f"k={params.vol_filter} exit={params.exit_mode} tf={params.zone_tf_secs}s "
-        f"tch={params.touches} capital={_fmt(params.capital)}",
+        f"tch={params.touches} capital={_fmt(params.capital)} regime={params.regime}",
         "fork: pessimistic (стоп-перед-тейком в V2 — консервативный мир; оптимистичного форка нет)",
         f"bars_1m_in_window: {len(bars)} (включая контекст с {ctx_start})",
         f"zones: {result.zones_count} events (скан фолда): {result.events_count}",
@@ -307,10 +322,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--depth", type=_decimal, required=True)
     p.add_argument("--conf", type=int, required=True, choices=(0, 30, 60))
     p.add_argument("--vol-filter", type=int, required=True, dest="vol_filter", choices=(1, 2))
-    p.add_argument("--exit-mode", required=True, dest="exit_mode", choices=("V1_48", "V2_R2"))
+    p.add_argument("--exit-mode", required=True, dest="exit_mode", choices=EXIT_MODES)
+    p.add_argument("--regime", default="а", choices=REGIMES)
     p.add_argument("--capital", type=_decimal, default=Decimal("10000"))
     p.add_argument("--taker-fee", type=_decimal, default=Decimal("0.0006"), dest="taker_fee")
     p.add_argument("--slippage", type=_decimal, default=Decimal("0.0005"))
+    p.add_argument(
+        "--holdout-ceiling",
+        type=int,
+        default=HOLDOUT_CEILING,
+        dest="holdout_ceiling",
+        help="потолок холдаут-окна для WARN (E-7 дефолт 1793577600; V-7 передаёт своё)",
+    )
     p.add_argument(
         "--holdout-ok",
         action="store_true",

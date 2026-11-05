@@ -299,7 +299,7 @@ def test_validation() -> None:
                                   conf_min=0, vol_filter=3, exit_mode="V1_48"))
     with pytest.raises(ValueError):
         run(bars, DeviationParams(tol=Decimal("0.005"), depth=Decimal("0.003"),
-                                  conf_min=0, vol_filter=1, exit_mode="V1_24"))
+                                  conf_min=0, vol_filter=1, exit_mode="V2_R3"))
     with pytest.raises(ValueError):
         run(bars, params(depth="0.001"))  # ниже сканируемого порога зонда
     with pytest.raises(ValueError):

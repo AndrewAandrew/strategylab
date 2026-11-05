@@ -1,7 +1,15 @@
-"""Симулятор zone-deviation reversal — Series E (ложный пробой HTF-зоны + возврат).
+"""Симулятор zone-deviation reversal — Series E + расширение Series V (ложный пробой
+HTF-зоны + возврат).
 
-Контракт заморожен в E-2-F `.superpowers/sdd/2026-11-02-seriesE-deviation/
+Контракт E заморожен в E-2-F `.superpowers/sdd/2026-11-02-seriesE-deviation/
 seriesE-deviation-preregistration-DRAFT.md` (решётка 18 клеток, владелец «ок»).
+Расширение V — V-2-SIM AMENDMENT `.superpowers/sdd/2026-11-03-seriesV-altcoins/
+V2-SIM-AMENDMENT-FROZEN.md` §1 (заморожен 2026-11-05 до sim-чисел): РОВНО три добавки
+к E-движку — (1) exit_mode V1_24/V2_R1/V2_R15 (семантика `_walk_exit` 1-в-1 probe
+`walk_exit`), (2) regime а/в/г (свежесть 30d и пауза после 2 стопов, 1-в-1 probe
+`regime_ok`/`cell_rounds`; «б» валидатор отвергает), (3) touch_ts зон/событий с attach
+1-в-1 probe `run_full`. Дефолты E (regime=а, V1_48/V2_R2) обязано давать побайтно те
+же net/journal/rounds; «б» и «в/г»-фильтры E-чисел не касаются.
 Механика следует зонду E-0 (`meas/probe_deviation.py`) 1-в-1, кроме единственного
 признанного ДО чисел ужесточения: k2-фильтр сравнивает объём события с
 trailing-медианой последних <=480 1h-баров (20d; метка «30d» в E-2-F —
@@ -11,7 +19,8 @@ trailing-медианой последних <=480 1h-баров (20d; метк�
 контекст до start_ts), детерминированный Decimal-расчёт, без доступа к БД и без
 касания J/S-ядра (E-5, прецедент carry.py).
 
-Модель (дословно freeze E-2-F; режим зафиксирован «а» — без фильтров б/в/г):
+Модель (дословно freeze E-2-F; дефолтный regime «а» побайтно = E, «в»/«г»
+включаются только параметром, «б» — артефакт черновика, отвергается):
 - зона: кластер строгих пивотов тени (экстремум среди +-W=3 баров зоны-TF),
   >=touches касаний, >=MIN_GAP=10 баров зоны-TF между соседними, допуск от
   МЕДИАНЫ кластера; подтверждена с ts(touch_{touches}) + W*tf_secs — более ранние
@@ -24,9 +33,10 @@ trailing-медианой последних <=480 1h-баров (20d; метк�
   (горизонт 360 мин; иначе sentinel 399); conf {0,30,60}: требуется stuck >= conf,
   решение на ts события + 1h + conf*60, вход — open первого 1h-бара с ts >=
   решения, adverse +/- slippage;
-- выходы: V1_48 — time-box 48 1h-барам, close бара выхода; V2_R2 — тейк
-  entry + 2*risk, стоп-проверка раньше тейка внутри бара (консервативно),
-  risk <= 0 — круг пропускается; форс-выход — CLOSE последнего бара фолда
+- выходы: V1_24/V1_48 — time-box 24/48 1h-баров, close бара выхода; V2_R1/
+  V2_R15/V2_R2 — тейк entry + {1; 1.5; 2}*risk, стоп-проверка раньше тейка
+  внутри бара (консервативно), risk <= 0 — круг пропускается;
+  форс-выход — CLOSE последнего бара фолда
   (как зонд; у carry был open — здесь зеркало зонда);
 - доллар: net круга = capital*side*(exit_fill/entry_fill - 1) - 2*capital*fee;
   трение 0.0006 fee за ногу (от capital) + 0.0005 slip adverse; capital $10k/круг;
@@ -38,7 +48,7 @@ from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from statistics import median
 
@@ -62,9 +72,17 @@ WIDE_SPREAD = Decimal("0.6")
 EPS_RANGE = Decimal("1E-12")
 CONF_VALID = (0, 30, 60)
 VOL_FILTERS = (1, 2)
-EXIT_MODES = ("V1_48", "V2_R2")
 V1_HOLD_HOURS = 48
 V2_R_MULT = Decimal("2")
+# amendment §1.1: V-режимы; семантика 1-в-1 probe EXITS/walk_exit.
+EXIT_MODES = ("V1_48", "V2_R2", "V1_24", "V2_R1", "V2_R15")
+TIMEBOX_HOURS_BY_MODE = {"V1_24": 24, "V1_48": V1_HOLD_HOURS}
+R_MULT_BY_MODE = {"V2_R1": Decimal("1"), "V2_R15": Decimal("1.5"), "V2_R2": V2_R_MULT}
+# amendment §1.2: режимы а/в/г («б» — артефакт черновика, не машина).
+REGIMES = ("а", "в", "г")
+FRESH_SECONDS = 30 * 86400  # regime «в»: max(ts - last touch)
+PAUSE_STOPS = 2  # regime «г»: consecutive stop_losses -> pause
+PAUSE_SECONDS = 30 * 86400  # regime «г»: pause length
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,12 +93,13 @@ class DeviationParams:
     depth: Decimal
     conf_min: int
     vol_filter: int  # 1 — выключен; 2 — trailing-медиана объёма И wide-spread
-    exit_mode: str  # "V1_48" | "V2_R2"
+    exit_mode: str  # "V1_48" | "V2_R2" | "V1_24" | "V2_R1" | "V2_R15"
     zone_tf_secs: int = 4 * SEC_1H
     touches: int = 2
     capital: Decimal = Decimal("10000")
     taker_fee: Decimal = Decimal("0.0006")
     slippage: Decimal = Decimal("0.0005")
+    regime: str = "а"  # amendment §1.2: "а" | "в" | "г" ("б" — ValueError)
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +109,7 @@ class Zone:
     ref: Decimal
     kind: str
     confirm_ts: int
+    touch_ts: tuple[int, ...] = ()  # amendment §1.3: sorted, zone-TF
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +124,7 @@ class Event:
     stuck: int
     volok: bool
     wide: bool
+    touch_ts: tuple[int, ...] = ()  # amendment §1.3: verbatim from zone
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,7 +221,28 @@ def _finalize_cluster(
         ref=median([x[1] for x in cl]),
         kind=kind,
         confirm_ts=bucket0 + cl[touches - 1][0] * tf_secs + W * tf_secs,
+        touch_ts=tuple(bucket0 + x[0] * tf_secs for x in cl),
     )
+
+
+def attach_touches(
+    zones: Sequence[Zone],
+    pivots: Sequence[tuple[int, Decimal, str]],
+    bucket0: int,
+    tf_secs: int,
+    tol: Decimal,
+) -> list[Zone]:
+    """Amendment §1.3, 1-в-1 inline attach зонда (run_full): к каждой зоне — все
+    касания полосы (тот же kind, |p-ref|/ref <= tol, допуск МЕДИАНЫ зоны, а не
+    кластера); ts позже фильтрацию не возмутят — «в» смотрит touch_ts <= ts."""
+    out: list[Zone] = []
+    for z in zones:
+        ts_all = list(z.touch_ts)
+        for i, p, k in pivots:
+            if k == z.kind and abs(p - z.ref) / z.ref <= tol:
+                ts_all.append(bucket0 + i * tf_secs)
+        out.append(replace(z, touch_ts=tuple(sorted(set(ts_all)))))
+    return out
 
 
 def build_zones(
@@ -306,6 +348,7 @@ def _scan_events(
                     stuck=_stuck_minutes(m_ts, m_close, close_ts, kind, zones[zi].ref),
                     volok=_trailing_volok(bars1h, i),
                     wide=_wide_spread(b),
+                    touch_ts=zones[zi].touch_ts,
                 )
             )
             last_i[zi] = i
@@ -325,10 +368,12 @@ def _walk_exit(
     stop_px: Decimal,
     end_i: int,
 ) -> tuple[Decimal, Decimal, str, int] | None:
-    """(exit_ref, exit_fill, reason, exit_i). V2: стоп проверяется раньше тейка
-    внутри бара (консервативно, как зонд). Форс — close последнего бара окна."""
-    if params.exit_mode == "V1_48":
-        hold_i = j_fill + V1_HOLD_HOURS
+    """(exit_ref, exit_fill, reason, exit_i), семантика probe walk_exit 1-в-1.
+    V2-ветка: стоп проверяется раньше тейка внутри бара (консервативно, как зонд).
+    Форс — close последнего бара окна."""
+    hold_h = TIMEBOX_HOURS_BY_MODE.get(params.exit_mode)
+    if hold_h is not None:  # V1 time-box (r_mult == 0.0 у зонда)
+        hold_i = j_fill + hold_h
         b = min(hold_i, end_i)
         exit_kind = "tb" if b == hold_i else "force"
         ref = bars1h[b].close
@@ -336,7 +381,7 @@ def _walk_exit(
     risk = (entry_px - stop_px) * side
     if risk <= ZERO:
         return None
-    take_px = entry_px + side * V2_R_MULT * risk
+    take_px = entry_px + side * R_MULT_BY_MODE[params.exit_mode] * risk
     for b in range(j_fill, end_i + 1):
         lo, hi = bars1h[b].low, bars1h[b].high
         if (side == 1 and lo <= stop_px) or (side == -1 and hi >= stop_px):
@@ -347,18 +392,31 @@ def _walk_exit(
     return ref, _exit_fill(ref, side, params), "force", end_i
 
 
+def _is_fresh(ts: int, touch_ts: Sequence[int]) -> bool:
+    """Amendment §1.2 «в», 1-в-1 probe regime_ok: касание строго ДО конца
+    событийного бара (t <= ts), не дальше FRESH_SECONDS назад."""
+    past = [t for t in touch_ts if t <= ts]
+    return bool(past) and (ts - max(past)) <= FRESH_SECONDS
+
+
 def _play_rounds(
     events: Sequence[Event], bars1h: Sequence[Bar], params: DeviationParams
 ) -> list[Round]:
     """Последовательный проход клетки: d/conf/k-гейты, решение +conf*60, вход open
-    следующего 1h-бара adverse. Кулдаун уже учтён на скане; круги независимы."""
+    следующего 1h-бара adverse. Кулдаун уже учтён на скане; круги независимы.
+    «в» — фильтр свежести по touch_ts; «г» — машина пауз probe cell_rounds
+    (2 подряд стопа -> пауза PAUSE_SECONDS от ts события, строгое <)."""
     end_i = len(bars1h) - 1
     if end_i < 1:
         return []
     h_ts = [b.ts for b in bars1h]
     friction_legs = 2 * params.capital * params.taker_fee
     rounds: list[Round] = []
+    paused_until = -1
+    consec = 0
     for e in events:
+        if params.regime == "в" and not _is_fresh(e.ts, e.touch_ts):
+            continue
         if e.depth < params.depth:
             continue
         if params.conf_min > 0 and e.stuck < params.conf_min:
@@ -373,6 +431,8 @@ def _play_rounds(
         entry_ref = bars1h[j_fill].open
         entry_fill = entry_ref * ((ONE + params.slippage) if side == 1 else (ONE - params.slippage))
         stop_px = bars1h[e.i].low if side == 1 else bars1h[e.i].high
+        if params.regime == "г" and e.ts < paused_until:
+            continue
         walked = _walk_exit(bars1h, params, j_fill, side, entry_fill, stop_px, end_i)
         if walked is None:
             continue
@@ -394,6 +454,10 @@ def _play_rounds(
                 net=net,
             )
         )
+        if params.regime == "г":
+            consec = consec + 1 if exit_kind == "stop" else 0
+            if consec >= PAUSE_STOPS:
+                paused_until, consec = e.ts + PAUSE_SECONDS, 0
     return rounds
 
 
@@ -408,6 +472,8 @@ def run_deviation(
         raise ValueError(f"conf_min обязан быть одним из {CONF_VALID}: {params.conf_min}")
     if params.vol_filter not in VOL_FILTERS:
         raise ValueError(f"vol_filter обязан быть одним из {VOL_FILTERS}: {params.vol_filter}")
+    if params.regime not in REGIMES:
+        raise ValueError(f"regime обязан быть одним из {REGIMES}: {params.regime!r}")
     if params.touches < 2:
         raise ValueError("touches обязан быть >= 2 (иначе зоны не из чего строить)")
     if params.zone_tf_secs < SEC_1H or params.zone_tf_secs % SEC_1H:
@@ -434,11 +500,18 @@ def run_deviation(
     zone_bars = aggregate(ordered, params.zone_tf_secs)
     zones: list[Zone] = []
     if zone_bars:
-        zones = build_zones(
-            find_pivots(zone_bars),
+        pivots = find_pivots(zone_bars)
+        zones = attach_touches(
+            build_zones(
+                pivots,
+                zone_bars[0].ts,
+                params.zone_tf_secs,
+                params.touches,
+                params.tol,
+            ),
+            pivots,
             zone_bars[0].ts,
             params.zone_tf_secs,
-            params.touches,
             params.tol,
         )
     first_i = bisect_left([b.ts for b in bars1h], start_ts)
