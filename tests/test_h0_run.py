@@ -434,3 +434,21 @@ def test_synthetic_window_is_full_coverage(h0):
 def test_run_cells_returns_both_frozen_k(h0):
     out = h0.run_cells(h0.synthetic_window(seed=3))
     assert set(out) == {6, 12}
+
+
+# ------------------------------------------------------- онер-шот замок (§2)
+
+
+def test_once_lock_first_acquire_writes_sha(tmp_path, h0):
+    lock = tmp_path / "ARMED.lock"
+    assert h0.acquire_once_lock(lock, "deadbeef") is True
+    assert lock.read_text(encoding="utf-8").strip() == "deadbeef"
+
+
+def test_once_lock_second_acquire_refuses(tmp_path, h0):
+    lock = tmp_path / "ARMED.lock"
+    h0.acquire_once_lock(lock, "deadbeef")
+    with pytest.raises(h0.AlreadyRunError):
+        h0.acquire_once_lock(lock, "cafe0000")
+    # первый отчёт не перезаписан вторым притязанием
+    assert lock.read_text(encoding="utf-8").strip() == "deadbeef"

@@ -38,6 +38,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import random
 import sqlite3
 import sys
@@ -86,6 +87,10 @@ class GuardError(Exception):
 
 class DataNotReady(Exception):
     """Покрытие окна хуже замороженного минимума — прогон не стартует (§2)."""
+
+
+class AlreadyRunError(Exception):
+    """Замок one-shot уже взведён — второй живой прогон закона §2 («ровно один»)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,6 +293,27 @@ def guard(now_ts: int) -> None:
         )
 
 
+LOCK_PATH = REPO / "data" / "h0_run" / "ARMED.lock"
+
+
+def acquire_once_lock(lock_path: Path, report_sha: str) -> bool:
+    """One-shot замок: первый вызов пишет sha256 отчёта, второй бросает AlreadyRunError.
+
+    Файл создаётся атомарно (O_EXCL): два запуска подряд физически не могут
+    оба «выиграть». Прочитать висящий замок — сигнал оператору, что прогон был.
+    """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(lock_path, "x", encoding="utf-8") as f:
+            f.write(report_sha.strip() + "\n")
+        return True
+    except FileExistsError:
+        raise AlreadyRunError(
+            f"H-0 уже прогонялся: {lock_path} (sha256 отчёта {lock_path.read_text(encoding='utf-8').strip()}) "
+            "— §2 допускает ровно один прогон"
+        ) from None
+
+
 def load_window(db_path: Path) -> list[Bar]:
     """Read-only загрузка окна [WINDOW_START, WINDOW_END) и строгая агрегация 1m→1h.
 
@@ -358,12 +384,16 @@ def main(argv: list[str] | None = None) -> int:
         else:
             guard(args.now if args.now is not None else int(time.time()))
             report = build_report(run_cells(load_window(Path(args.db))), synthetic=False)
+            acquire_once_lock(LOCK_PATH, hashlib.sha256(report.encode("utf-8")).hexdigest())
     except GuardError as exc:
         print(f"H0-GUARD: {exc}")
         return 3
     except DataNotReady as exc:
         print(f"H0-DATA: {exc}")
         return 2
+    except AlreadyRunError as exc:
+        print(f"H0-ONESHOT: {exc}")
+        return 4
     sys.stdout.write(report)
     return 0
 
