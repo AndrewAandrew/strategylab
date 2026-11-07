@@ -439,16 +439,53 @@ def test_run_cells_returns_both_frozen_k(h0):
 # ------------------------------------------------------- онер-шот замок (§2)
 
 
-def test_once_lock_first_acquire_writes_sha(tmp_path, h0):
-    lock = tmp_path / "ARMED.lock"
-    assert h0.acquire_once_lock(lock, "deadbeef") is True
-    assert lock.read_text(encoding="utf-8").strip() == "deadbeef"
+def test_once_lock_first_acquire_stores_report_and_returns_sha(tmp_path, h0):
+    lock = tmp_path / "REPORT.txt"
+    report = "H-0 REPORT\nline two\n"
+    sha = h0.acquire_once_lock(lock, report)
+    assert sha == hashlib.sha256(report.encode("utf-8")).hexdigest()
+    assert lock.read_text(encoding="utf-8") == report
 
 
 def test_once_lock_second_acquire_refuses(tmp_path, h0):
-    lock = tmp_path / "ARMED.lock"
-    h0.acquire_once_lock(lock, "deadbeef")
+    lock = tmp_path / "REPORT.txt"
+    h0.acquire_once_lock(lock, "FIRST\n")
     with pytest.raises(h0.AlreadyRunError):
-        h0.acquire_once_lock(lock, "cafe0000")
-    # первый отчёт не перезаписан вторым притязанием
-    assert lock.read_text(encoding="utf-8").strip() == "deadbeef"
+        h0.acquire_once_lock(lock, "SECOND\n")
+    # первый артефакт не перезаписан вторым притязанием
+    assert lock.read_text(encoding="utf-8") == "FIRST\n"
+
+
+def test_live_refuses_when_lock_present_without_touching_db(tmp_path, monkeypatch, h0):
+    # замок уже взведён -> rc=4 ДО любого чтения базы (дух one-shot: не перечитывать)
+    lock = tmp_path / "REPORT.txt"
+    lock.write_text("OLD\n", encoding="utf-8")
+    monkeypatch.setattr(h0, "LOCK_PATH", lock)
+    monkeypatch.setattr(h0, "guard", lambda now: None)  # окно считаем закрытым
+
+    def _boom(*a, **kw):
+        raise AssertionError("load_window вызван при взведённом замке")
+
+    monkeypatch.setattr(h0, "load_window", _boom)
+    assert h0.main(["--live"]) == 4
+
+
+def test_usage_errors_return_64_not_2(monkeypatch, h0):
+    # rc=2 зарезервирован за DATA; аргументные ошибки — 64 (находка 7)
+    for argv in ([], ["--live", "--now", "1798761600"], ["--live", "--db", "x.db"], ["--bogus"]):
+        with pytest.raises(SystemExit) as exc:
+            h0.main(argv)
+        assert exc.value.code == 64, argv
+
+
+def test_report_shows_percent_units(tmp_path, h0):
+    # доли в публикуемом отчёте печатаются в процентах (находка 1: 0.03$-доля = 3 %)
+    rounds = [
+        make_round(h0, "0.01", ts=W0 + 3600),
+        make_round(h0, "0.01", ts=W0 + 3600),
+        make_round(h0, "0.01", ts=W0 + 3600),
+    ]
+    report = h0.build_report({6: rounds, 12: rounds}, synthetic=True)
+    assert "sum=3.000000%" in report  # не sum=0.030000%
+    assert "mean_net=1.000000%" in report
+    assert "ann=" in report and "%" in report.split("ann=")[1].split()[0]

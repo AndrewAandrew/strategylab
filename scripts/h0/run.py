@@ -264,6 +264,11 @@ def _fmt(value: Decimal | None, places: str) -> str:
     return "n/a" if value is None else str(value.quantize(Decimal(places)))
 
 
+def _pct(value: Decimal | None) -> str:
+    """Доля -> проценты для публикации (доли в отчёте с меткой % читаются на 100x неверно)."""
+    return "n/a" if value is None else _fmt(value * Decimal(100), "0.000001") + "%"
+
+
 def build_report(cells: dict[int, list[Round]], *, synthetic: bool) -> str:
     """Детерминированный отчёт: только замороженные константы и числа — ни секунды
     wall-clock, иначе двойной байт-identical прогон не сходится."""
@@ -276,10 +281,10 @@ def build_report(cells: dict[int, list[Round]], *, synthetic: bool) -> str:
     for k in K_CELLS:
         c = evaluate_cell(cells.get(k, []), k)
         flags = " ".join(f"{g}={'PASS' if p else 'FAIL'}" for g, p in sorted(c.gates.items()))
-        thirds = " ".join(f"(nq={nq},sum={_fmt(total, '0.000001')}%)" for nq, total in c.thirds)
+        thirds = " ".join(f"(nq={nq},sum={_pct(total)})" for nq, total in c.thirds)
         lines += [
-            f"cell k={k}: n={c.n} mean_net={_fmt(c.mean_net_pct, '0.00000001')} "
-            f"ann={_fmt(c.ann_pct, '0.000001')} cats={c.catastrophes} thirds=[{thirds}]",
+            f"cell k={k}: n={c.n} mean_net={_pct(c.mean_net_pct)} ann={_pct(c.ann_pct)} "
+            f"cats={c.catastrophes} thirds=[{thirds}]",
             f"  {flags} LIVE={'YES' if c.live else 'NO'}",
         ]
     lines.append(f"VERDICT: {series_verdict(cells)}")
@@ -293,25 +298,36 @@ def guard(now_ts: int) -> None:
         )
 
 
-LOCK_PATH = REPO / "data" / "h0_run" / "ARMED.lock"
+LOCK_PATH = REPO / "data" / "h0_run" / "REPORT.txt"
 
 
-def acquire_once_lock(lock_path: Path, report_sha: str) -> bool:
-    """One-shot замок: первый вызов пишет sha256 отчёта, второй бросает AlreadyRunError.
+def acquire_once_lock(lock_path: Path, report_text: str) -> str:
+    """One-shot артефакт: первый вызов атомарно пишет полный отчёт (O_EXCL) и
+    возвращает его sha256; второй бросает AlreadyRunError — закон §2 «ровно один».
 
-    Файл создаётся атомарно (O_EXCL): два запуска подряд физически не могут
-    оба «выиграть». Прочитать висящий замок — сигнал оператору, что прогон был.
+    Отчёт переживает консоль: если stdout сорвался после записи, артефакт уже на
+    диске. Прочитать висящий REPORT.txt — сигнал оператору, что прогон был.
     """
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(lock_path, "x", encoding="utf-8") as f:
-            f.write(report_sha.strip() + "\n")
-        return True
+        with open(lock_path, "x", encoding="utf-8", newline="\n") as f:
+            f.write(report_text)
     except FileExistsError:
+        existing = lock_path.read_bytes()
         raise AlreadyRunError(
-            f"H-0 уже прогонялся: {lock_path} (sha256 отчёта {lock_path.read_text(encoding='utf-8').strip()}) "
-            "— §2 допускает ровно один прогон"
+            f"H-0 уже прогонялся: {lock_path} (sha256 отчёта "
+            f"{hashlib.sha256(existing).hexdigest()}) — §2 допускает ровно один прогон"
         ) from None
+    return hashlib.sha256(report_text.encode("utf-8")).hexdigest()
+
+
+class _Parser(argparse.ArgumentParser):
+    """rc=64 на ошибки аргументов: rc=2 зарезервирован за DATA (находка аудита 7)."""
+
+    def error(self, message: str) -> None:  # pragma: no cover - сообщение печатает argparse
+        self.print_usage(sys.stderr)
+        sys.stderr.write(f"{self.prog}: error: {message}\n")
+        raise SystemExit(64)
 
 
 def load_window(db_path: Path) -> list[Bar]:
@@ -371,20 +387,26 @@ def synthetic_window(seed: int) -> list[Bar]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="H-0 one-shot forward run (замороженный закон)")
+    parser = _Parser(description="H-0 one-shot forward run (замороженный закон)")
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--smoke", action="store_true", help="синтетическое окно, база не трогается")
     mode.add_argument("--live", action="store_true", help="боевой прогон (только после 2027-01-01)")
-    parser.add_argument("--db", default=str(DB_PATH))
-    parser.add_argument("--now", type=int, default=None, help="оверрайд времени для guard'а")
     args = parser.parse_args(argv)
     try:
         if args.smoke:
             report = build_report(run_cells(synthetic_window(42)), synthetic=True)
-        else:
-            guard(args.now if args.now is not None else int(time.time()))
-            report = build_report(run_cells(load_window(Path(args.db))), synthetic=False)
-            acquire_once_lock(LOCK_PATH, hashlib.sha256(report.encode("utf-8")).hexdigest())
+            sys.stdout.write(report)
+            return 0
+        # Боевой путь заморожен: ни --db, ни --now (находка аудита 2 — guard был
+        # декларацией). Время только системное, база только data/ethusdt.db.
+        guard(int(time.time()))
+        if LOCK_PATH.exists():
+            raise AlreadyRunError(
+                f"H-0 уже прогонялся: {LOCK_PATH} (sha256 отчёта "
+                f"{hashlib.sha256(LOCK_PATH.read_bytes()).hexdigest()}) — §2 допускает ровно один прогон"
+            )
+        report = build_report(run_cells(load_window(DB_PATH)), synthetic=False)
+        acquire_once_lock(LOCK_PATH, report)  # артефакт на диске — до консоли
     except GuardError as exc:
         print(f"H0-GUARD: {exc}")
         return 3
